@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Gardendless</string>
+    <string name="unzipping">Распаковка файлов…</string>
+    <string name="export_done">Экспорт завершён</string>
+    <string name="export_failed">Не удалось экспортировать файл</string>
+    <string name="documents_root_title">Gardendless</string>
+    <string name="documents_root_summary">Файлы игры</string>
+    <string name="documents_gpnext_root_title">GP-Next</string>
+    <string name="documents_gpnext_root_summary">Пакеты данных и JS-моды</string>
+    <string name="documents_open_failed">Не найден файловый менеджер</string>
+    <string name="documents_error_delete_root">Нельзя удалить корневую папку игры</string>
+    <string name="documents_error_target_exists">Файл с таким именем уже существует</string>
+    <string name="documents_error_rename_failed">Не удалось переименовать файл</string>
+    <string name="exit_confirm">Выйти из игры?</string>
+    <string name="yes">Выйти</string>
+    <string name="no">Вернуться</string>
+    <string name="hint">Внимание</string>
+    <string name="description">Это неофициальный порт. Подробнее: https://github.com/Cateners/gardendless-android</string>
+    <string name="game_menu_description">Архив игры хранится на устройстве. Скачайте ZIP из Telegram и выберите его здесь.</string>
+    <string name="game_ready_title">Игра готова к запуску</string>
+    <string name="game_setup_title">Подготовьте игру</string>
+    <string name="game_status_installed">ИГРА УСТАНОВЛЕНА</string>
+    <string name="game_status_missing">НУЖЕН ZIP-АРХИВ</string>
+    <string name="choose_game_zip">Выбрать ZIP игры</string>
+    <string name="update_game_zip">Обновить ZIP игры</string>
+    <string name="launch_game">Запустить</string>
+    <string name="download_zip_from_telegram">Скачать ZIP из Telegram</string>
+    <string name="zip_picker_unavailable">Не удалось открыть выбор файлов</string>
+    <string name="installing_game">Установка игры</string>
+    <string name="installing_game_description">Проверяем и распаковываем ZIP. Подождите…</string>
+    <string name="installing_progress">Распаковка… %1$d%%</string>
+    <string name="game_zip_installed">ZIP игры установлен</string>
+    <string name="game_zip_install_failed">Не удалось установить ZIP игры</string>
+    <string name="game_zip_install_error">%1$s</string>
+    <string name="telegram_open_failed">Не удалось открыть Telegram-канал</string>
+    <string name="update_warning_title">Обновить игру?</string>
+    <string name="update_warning_message">После обновления сохранения могут стать несовместимыми или потеряться. Перед продолжением экспортируйте их.</string>
+    <string name="continue_update">Продолжить</string>
+    <string name="game_dialog_title">Gardendless</string>
+</resources>

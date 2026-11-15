@@ -19,4 +19,25 @@
     <string name="no">点错了</string>
     <string name="hint">提示</string>
     <string name="description">这不是官方版本。关于此移植的更多信息，见 https://github.com/Cateners/gardendless-android</string>
+    <string name="game_menu_description">选择从 Telegram 频道下载的游戏 ZIP 文件。</string>
+    <string name="game_ready_title">游戏已准备就绪</string>
+    <string name="game_setup_title">准备游戏</string>
+    <string name="game_status_installed">已安装游戏</string>
+    <string name="game_status_missing">需要 ZIP 文件</string>
+    <string name="choose_game_zip">选择游戏 ZIP</string>
+    <string name="update_game_zip">更新游戏 ZIP</string>
+    <string name="launch_game">启动</string>
+    <string name="download_zip_from_telegram">从 Telegram 下载 ZIP</string>
+    <string name="zip_picker_unavailable">无法打开文件选择器</string>
+    <string name="installing_game">正在安装游戏</string>
+    <string name="installing_game_description">正在检查并解压 ZIP 文件，请稍候。</string>
+    <string name="installing_progress">正在解压… %1$d%%</string>
+    <string name="game_zip_installed">游戏 ZIP 已安装</string>
+    <string name="game_zip_install_failed">无法安装游戏 ZIP</string>
+    <string name="game_zip_install_error">%1$s</string>
+    <string name="telegram_open_failed">无法打开 Telegram 频道</string>
+    <string name="update_warning_title">更新游戏？</string>
+    <string name="update_warning_message">更新可能导致现有存档不兼容或丢失。继续前请先导出存档。</string>
+    <string name="continue_update">继续</string>
+    <string name="game_dialog_title">Gardendless</string>
 </resources>

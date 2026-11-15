@@ -15,35 +15,56 @@
 package com.fct.gardendless
 
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import android.system.Os
 import android.system.OsConstants
+import android.text.InputType
 import android.util.Base64
 import android.util.Log
+import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.webkit.*
 import android.webkit.WebChromeClient.CustomViewCallback
-import android.widget.ProgressBar
+import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.WindowCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewAssetLoader.InternalStoragePathHandler
 import com.google.android.material.color.DynamicColors
+import com.google.android.material.color.MaterialColors
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.progressindicator.LinearProgressIndicator
+import com.google.android.material.card.MaterialCardView
+import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.textview.MaterialTextView
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.util.zip.ZipInputStream
+import java.io.IOException
 import androidx.core.net.toUri
 import org.json.JSONArray
 import org.json.JSONObject
@@ -78,6 +99,7 @@ class GameActivity : AppCompatActivity() {
 
     private val FILE_CHOOSER_RESULT_CODE = 101
     private val EXPORT_SAVE_RESULT_CODE = 102
+    private val GAME_ARCHIVE_REQUEST_CODE = 103
 
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
 
@@ -88,12 +110,20 @@ class GameActivity : AppCompatActivity() {
 
     // 网页全屏（HTML5 Fullscreen API）回调，非空表示当前处于全屏
     private var fullscreenCallback: CustomViewCallback? = null
+    private var isLauncherVisible = true
+
+    private enum class LauncherButtonStyle {
+        PRIMARY,
+        TONAL,
+        OUTLINED
+    }
 
     private companion object {
         const val PREF_FULLSCREEN = "webview_fullscreen"
         const val TAG = "Gardendless"
         const val SHIM_ASSET = "gdnext-shim.js"
         const val GP_NEXT_DIR_NAME = "gp-next"
+        const val TELEGRAM_CHANNEL_URL = "https://t.me/pvz2gardendless"
 
         /**
          * 是否在启动时自动启用 gp-next 的 JS Modding 开关。
@@ -110,10 +140,32 @@ class GameActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         DynamicColors.applyToActivityIfAvailable(this)
-        setupFullScreen()
+        showGameMenu()
+    }
 
-        /** 装配 WebView、AssetLoader、JS 桥与各回调，并加载游戏入口页 */
-        fun setupWebview() {
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (isLauncherVisible) showGameMenu()
+    }
+
+    private fun launchGame() {
+        if (GameArchiveInstaller(filesDir).installedSiteDirectory() == null) {
+            showGameMenu()
+            return
+        }
+        isLauncherVisible = false
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        setupFullScreen()
+        setupWebview()
+    }
+
+    /** 装配 WebView、AssetLoader、JS 桥与各回调，并加载已导入的游戏 */
+    private fun setupWebview() {
+            val gameSiteDir = GameArchiveInstaller(filesDir).installedSiteDirectory()
+            if (gameSiteDir == null) {
+                showGameMenu()
+                return
+            }
             webView = MouseGameWebView(this)
 
             // 黑底容器，负责 16:10 ~ 17:9 的比例适配与全屏切换
@@ -154,7 +206,7 @@ class GameActivity : AppCompatActivity() {
                 )
                 .addPathHandler(
                     "/",
-                    InternalStoragePathHandler(this, File(filesDir, "pvzge_web-master/docs"))
+                    InternalStoragePathHandler(this, gameSiteDir)
                 )
                 .build()
 
@@ -181,6 +233,11 @@ class GameActivity : AppCompatActivity() {
                 @JavascriptInterface
                 fun setExportName(name: String) {
                     pendingExportName = name
+                }
+
+                @JavascriptInterface
+                fun exportDataUri(dataUri: String, fileName: String) {
+                    webView.post { beginSaveExport(dataUri, fileName, null, null) }
                 }
 
                 // ── gp-next 数据目录（Tauri plugin:path / plugin:fs 的落地实现）──
@@ -233,26 +290,7 @@ class GameActivity : AppCompatActivity() {
             }, "GardendlessBridge")
 
             webView.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
-                if (!url.startsWith("data:")) return@setDownloadListener
-
-                // 解析 Data URI（形如 data:application/json;base64,XXXXX）
-                val parts = url.split(",")
-                if (parts.size < 2) return@setDownloadListener
-                pendingExport = Uri.decode(parts.subList(1, parts.size).joinToString(",")).toByteArray()
-
-                // 交由系统保存对话框决定位置与文件名
-                val fallbackType = mimeType?.takeIf { it.isNotBlank() } ?: "application/octet-stream"
-                val name = pendingExportName ?: suggestFileName(contentDisposition, fallbackType)
-                pendingExportName = null
-                // 文件名通常已自带扩展名（由游戏给出），mime 必须与之匹配，
-                // 否则 SAF 会按 mime 再追加一个后缀（例如 .json 变成 .json.txt）
-                val type = mimeFromExtension(name) ?: fallbackType
-                val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                    this.type = type
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    putExtra(Intent.EXTRA_TITLE, name)
-                }
-                startActivityForResult(intent, EXPORT_SAVE_RESULT_CODE)
+                beginSaveExport(url, pendingExportName, contentDisposition, mimeType)
             }
 
             webView.webViewClient = object : WebViewClient() {
@@ -347,6 +385,82 @@ class GameActivity : AppCompatActivity() {
                     return true
                 }
 
+                override fun onJsAlert(
+                    view: WebView?,
+                    url: String?,
+                    message: String?,
+                    result: JsResult?
+                ): Boolean {
+                    val jsResult = result ?: return false
+                    MaterialAlertDialogBuilder(this@GameActivity)
+                        .setTitle(R.string.game_dialog_title)
+                        .setMessage(message.orEmpty())
+                        .setPositiveButton(android.R.string.ok) { _, _ -> jsResult.confirm() }
+                        .setOnCancelListener { jsResult.cancel() }
+                        .show()
+                    return true
+                }
+
+                override fun onJsConfirm(
+                    view: WebView?,
+                    url: String?,
+                    message: String?,
+                    result: JsResult?
+                ): Boolean {
+                    val jsResult = result ?: return false
+                    MaterialAlertDialogBuilder(this@GameActivity)
+                        .setTitle(R.string.game_dialog_title)
+                        .setMessage(message.orEmpty())
+                        .setNegativeButton(android.R.string.cancel) { _, _ -> jsResult.cancel() }
+                        .setPositiveButton(android.R.string.ok) { _, _ -> jsResult.confirm() }
+                        .setOnCancelListener { jsResult.cancel() }
+                        .show()
+                    return true
+                }
+
+                override fun onJsPrompt(
+                    view: WebView?,
+                    url: String?,
+                    message: String?,
+                    defaultValue: String?,
+                    result: JsPromptResult?
+                ): Boolean {
+                    val jsResult = result ?: return false
+                    val input = EditText(this@GameActivity).apply {
+                        setText(defaultValue.orEmpty())
+                        setSingleLine(true)
+                        inputType = InputType.TYPE_CLASS_TEXT
+                    }
+                    MaterialAlertDialogBuilder(this@GameActivity)
+                        .setTitle(R.string.game_dialog_title)
+                        .setMessage(message.orEmpty())
+                        .setView(input)
+                        .setNegativeButton(android.R.string.cancel) { _, _ -> jsResult.cancel() }
+                        .setPositiveButton(android.R.string.ok) { _, _ ->
+                            jsResult.confirm(input.text.toString())
+                        }
+                        .setOnCancelListener { jsResult.cancel() }
+                        .show()
+                    return true
+                }
+
+                override fun onJsBeforeUnload(
+                    view: WebView?,
+                    url: String?,
+                    message: String?,
+                    result: JsResult?
+                ): Boolean {
+                    val jsResult = result ?: return false
+                    MaterialAlertDialogBuilder(this@GameActivity)
+                        .setTitle(R.string.game_dialog_title)
+                        .setMessage(message.orEmpty())
+                        .setNegativeButton(android.R.string.cancel) { _, _ -> jsResult.cancel() }
+                        .setPositiveButton(android.R.string.ok) { _, _ -> jsResult.confirm() }
+                        .setOnCancelListener { jsResult.cancel() }
+                        .show()
+                    return true
+                }
+
                 // 网页调用 element.requestFullscreen() 时触发
                 override fun onShowCustomView(view: View, callback: CustomViewCallback) {
                     if (fullscreenCallback != null) {
@@ -372,68 +486,335 @@ class GameActivity : AppCompatActivity() {
             webView.loadUrl("https://appassets.androidplatform.net/index.html")
 
             setupBackNavigation()
+    }
+
+    private fun showGameMenu() {
+        isLauncherVisible = true
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        val hasGame = GameArchiveInstaller(filesDir).installedSiteDirectory() != null
+        val surface = MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurface, Color.BLACK)
+        val cardSurface = MaterialColors.getColor(
+            this,
+            com.google.android.material.R.attr.colorSurfaceContainerLow,
+            surface
+        )
+        val onSurface = MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurface, Color.WHITE)
+        val onSurfaceVariant = MaterialColors.getColor(
+            this,
+            com.google.android.material.R.attr.colorOnSurfaceVariant,
+            Color.LTGRAY
+        )
+        val secondaryContainer = MaterialColors.getColor(
+            this,
+            com.google.android.material.R.attr.colorSecondaryContainer,
+            Color.DKGRAY
+        )
+        val onSecondaryContainer = MaterialColors.getColor(
+            this,
+            com.google.android.material.R.attr.colorOnSecondaryContainer,
+            Color.WHITE
+        )
+        val outline = MaterialColors.getColor(this, com.google.android.material.R.attr.colorOutlineVariant, Color.GRAY)
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(surface)
         }
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+            insets
+        }
+        val toolbar = MaterialToolbar(this).apply {
+            title = getString(R.string.app_name)
+            setTitleTextAppearance(
+                this@GameActivity,
+                com.google.android.material.R.style.TextAppearance_Material3_TitleLarge
+            )
+            setTitleTextColor(onSurface)
+            setBackgroundColor(surface)
+            elevation = 0f
+        }
+        root.addView(
+            toolbar,
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(64))
+        )
+        val scrollView = ScrollView(this).apply {
+            isFillViewport = true
+            isVerticalScrollBarEnabled = false
+        }
+        val centeredContent = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(24), dp(24), dp(24), dp(24))
+        }
+        val card = MaterialCardView(this).apply {
+            radius = dp(28).toFloat()
+            cardElevation = 0f
+            strokeWidth = dp(1)
+            setStrokeColor(android.content.res.ColorStateList.valueOf(outline))
+            setCardBackgroundColor(cardSurface)
+        }
+        val cardContent = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(24), dp(24), dp(24))
+        }
+        val statusChip = Chip(this).apply {
+            text = getString(if (hasGame) R.string.game_status_installed else R.string.game_status_missing)
+            isCheckable = false
+            isClickable = false
+            chipBackgroundColor = android.content.res.ColorStateList.valueOf(secondaryContainer)
+            setTextColor(onSecondaryContainer)
+        }
+        cardContent.addView(statusChip, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { bottomMargin = dp(16) })
+        cardContent.addView(MaterialTextView(this).apply {
+            text = getString(if (hasGame) R.string.game_ready_title else R.string.game_setup_title)
+            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_HeadlineMedium)
+            setTextColor(onSurface)
+        })
+        cardContent.addView(MaterialTextView(this).apply {
+            text = getString(R.string.game_menu_description)
+            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyLarge)
+            setTextColor(onSurfaceVariant)
+            setPadding(0, dp(8), 0, dp(16))
+        })
 
-        /** 首次安装或版本号变化时，把 assets 中的游戏包解压到 filesDir */
-        fun checkAndExtractAssets(currentVersion: Int) {
-            val progressBar = ProgressBar(this).apply {
-                // 解压总时长不可预知，使用不确定模式
-                isIndeterminate = true
-                setPadding(50, 50, 50, 50)
-            }
+        if (hasGame) {
+            addMenuButton(
+                cardContent,
+                R.string.launch_game,
+                R.drawable.ic_play_arrow,
+                LauncherButtonStyle.PRIMARY,
+                ::launchGame
+            )
+            addMenuButton(
+                cardContent,
+                R.string.update_game_zip,
+                R.drawable.ic_refresh,
+                LauncherButtonStyle.OUTLINED,
+                ::confirmGameUpdate
+            )
+        } else {
+            addMenuButton(
+                cardContent,
+                R.string.choose_game_zip,
+                R.drawable.ic_folder_open,
+                LauncherButtonStyle.PRIMARY,
+                ::selectGameArchive
+            )
+        }
+        addMenuButton(
+            cardContent,
+            R.string.download_zip_from_telegram,
+            R.drawable.ic_download,
+            LauncherButtonStyle.TONAL,
+            ::openTelegramChannel
+        )
 
-            val dialog = MaterialAlertDialogBuilder(this)
-                .setTitle(R.string.unzipping)
-                .setMessage(R.string.description)
-                .setView(progressBar)
-                // 解压期间不可取消，避免留下不完整的目录
-                .setCancelable(false)
-                .create()
+        card.addView(cardContent)
+        val cardWidth = (resources.displayMetrics.widthPixels - dp(48)).coerceAtMost(dp(640))
+        centeredContent.addView(card, LinearLayout.LayoutParams(cardWidth, LinearLayout.LayoutParams.WRAP_CONTENT))
+        scrollView.addView(
+            centeredContent,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+        root.addView(scrollView, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            0,
+            1f
+        ))
 
-            dialog.show()
+        setContentView(root)
+        ViewCompat.requestApplyInsets(root)
 
-            // 解压在 IO 线程执行，完成后再回主线程启动 WebView
-            GlobalScope.launch(Dispatchers.IO) {
-                try {
-                    assets.open("pvzge_web-master.zip").use { inputStream ->
-                        ZipInputStream(inputStream).use { zis ->
-                            var entry = zis.nextEntry
-                            while (entry != null) {
-                                val file = File(filesDir, entry.name)
-                                if (entry.isDirectory) {
-                                    file.mkdirs()
-                                } else {
-                                    file.parentFile?.mkdirs()
-                                    file.outputStream().use { zis.copyTo(it) }
-                                }
-                                entry = zis.nextEntry
-                            }
-                        }
-                    }
+        val isNightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
+            Configuration.UI_MODE_NIGHT_YES
+        window.statusBarColor = surface
+        window.navigationBarColor = surface
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !isNightMode
+            isAppearanceLightNavigationBars = !isNightMode
+        }
+    }
 
-                    // 记录已解压版本，后续启动可直接跳过解压
-                    prefs.edit().putInt("extracted_version", currentVersion).apply()
-
-                    withContext(Dispatchers.Main) {
-                        dialog.dismiss()
-                        setupWebview()
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    withContext(Dispatchers.Main) {
-                        dialog.dismiss()
-                    }
+    private fun addMenuButton(
+        parent: LinearLayout,
+        textRes: Int,
+        iconRes: Int,
+        style: LauncherButtonStyle,
+        onClick: () -> Unit
+    ) {
+        val button = MaterialButton(this).apply {
+            text = getString(textRes)
+            cornerRadius = dp(20)
+            insetTop = 0
+            insetBottom = 0
+            icon = androidx.appcompat.content.res.AppCompatResources.getDrawable(this@GameActivity, iconRes)
+            iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
+            iconPadding = dp(12)
+            setOnClickListener { onClick() }
+            val primary = MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, Color.GRAY)
+            val onPrimary = MaterialColors.getColor(
+                this,
+                com.google.android.material.R.attr.colorOnPrimary,
+                Color.WHITE
+            )
+            val secondaryContainer = MaterialColors.getColor(
+                this,
+                com.google.android.material.R.attr.colorSecondaryContainer,
+                Color.DKGRAY
+            )
+            val onSecondaryContainer = MaterialColors.getColor(
+                this,
+                com.google.android.material.R.attr.colorOnSecondaryContainer,
+                Color.WHITE
+            )
+            when (style) {
+                LauncherButtonStyle.PRIMARY -> {
+                    backgroundTintList = android.content.res.ColorStateList.valueOf(primary)
+                    iconTint = android.content.res.ColorStateList.valueOf(onPrimary)
+                    setTextColor(onPrimary)
+                }
+                LauncherButtonStyle.TONAL -> {
+                    backgroundTintList = android.content.res.ColorStateList.valueOf(secondaryContainer)
+                    iconTint = android.content.res.ColorStateList.valueOf(onSecondaryContainer)
+                    setTextColor(onSecondaryContainer)
+                }
+                LauncherButtonStyle.OUTLINED -> {
+                    backgroundTintList = android.content.res.ColorStateList.valueOf(
+                        MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurface, Color.BLACK)
+                    )
+                    strokeWidth = dp(1)
+                    strokeColor = android.content.res.ColorStateList.valueOf(
+                        MaterialColors.getColor(
+                            this,
+                            com.google.android.material.R.attr.colorOutline,
+                            Color.GRAY
+                        )
+                    )
+                    iconTint = android.content.res.ColorStateList.valueOf(primary)
+                    setTextColor(primary)
                 }
             }
         }
+        parent.addView(
+            button,
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { topMargin = dp(10) }
+        )
+    }
 
-        // 游戏包版本变化（含首次安装）时重新解压
-        val currentVersion = packageManager.getPackageInfo(packageName, 0).versionCode
+    private fun confirmGameUpdate() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.update_warning_title)
+            .setMessage(R.string.update_warning_message)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.continue_update) { _, _ -> selectGameArchive() }
+            .show()
+    }
 
-        if (prefs.getInt("extracted_version", 0) != currentVersion) {
-            checkAndExtractAssets(currentVersion)
-        } else {
-            setupWebview()
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun selectGameArchive() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(
+                Intent.EXTRA_MIME_TYPES,
+                arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")
+            )
+        }
+        try {
+            startActivityForResult(intent, GAME_ARCHIVE_REQUEST_CODE)
+        } catch (e: Exception) {
+            Log.e(TAG, "Unable to open the ZIP file picker", e)
+            Toast.makeText(this, R.string.zip_picker_unavailable, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun importGameArchive(uri: Uri) {
+        val progress = LinearProgressIndicator(this).apply {
+            isIndeterminate = true
+        }
+        val progressText = TextView(this).apply {
+            text = getString(R.string.installing_game_description)
+            setPadding(0, dp(12), 0, 0)
+        }
+        val progressContent = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(20), dp(24), dp(20))
+            addView(progress, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(4)))
+            addView(progressText)
+        }
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.installing_game)
+            .setView(progressContent)
+            .setCancelable(false)
+            .create()
+        dialog.show()
+
+        lifecycleScope.launch {
+            try {
+                val archiveSize = withContext(Dispatchers.IO) { getArchiveSize(uri) }
+                progress.isIndeterminate = archiveSize <= 0
+                if (archiveSize > 0) {
+                    progressText.text = getString(R.string.installing_progress, 0)
+                }
+                withContext(Dispatchers.IO) {
+                    val input = contentResolver.openInputStream(uri)
+                        ?: throw IOException("The selected ZIP could not be opened")
+                    input.use {
+                        GameArchiveInstaller(filesDir).install(it, archiveSize) { bytesRead, totalBytes ->
+                            val percentage = ((bytesRead * 100) / totalBytes).toInt().coerceIn(0, 100)
+                            runOnUiThread {
+                                progress.setProgressCompat(percentage, false)
+                                progressText.text = getString(R.string.installing_progress, percentage)
+                            }
+                        }
+                    }
+                }
+                progress.isIndeterminate = false
+                progress.setProgressCompat(100, false)
+                dialog.dismiss()
+                showGameMenu()
+                Toast.makeText(this@GameActivity, R.string.game_zip_installed, Toast.LENGTH_SHORT).show()
+            } catch (e: CancellationException) {
+                dialog.dismiss()
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to install game ZIP", e)
+                dialog.dismiss()
+                showGameMenu()
+                MaterialAlertDialogBuilder(this@GameActivity)
+                    .setTitle(R.string.game_zip_install_failed)
+                    .setMessage(getString(R.string.game_zip_install_error, e.localizedMessage ?: e.javaClass.simpleName))
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+            }
+        }
+    }
+
+    private fun getArchiveSize(uri: Uri): Long {
+        val cursor = contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null) ?: return -1
+        cursor.use {
+            if (!it.moveToFirst() || it.isNull(0)) return -1
+            return it.getLong(0).takeIf { size -> size > 0 } ?: -1
+        }
+    }
+
+    private fun openTelegramChannel() {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(TELEGRAM_CHANNEL_URL)))
+        } catch (e: Exception) {
+            Log.e(TAG, "Unable to open the Telegram channel", e)
+            Toast.makeText(this, R.string.telegram_open_failed, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -448,6 +829,9 @@ class GameActivity : AppCompatActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         when (requestCode) {
+            GAME_ARCHIVE_REQUEST_CODE -> {
+                if (resultCode == RESULT_OK) data?.data?.let(::importGameArchive)
+            }
             FILE_CHOOSER_RESULT_CODE -> {
                 val result = if (data == null || resultCode != RESULT_OK) null else arrayOf(data.data!!)
                 filePathCallback?.onReceiveValue(result as Array<Uri>?)
@@ -463,18 +847,68 @@ class GameActivity : AppCompatActivity() {
         }
     }
 
+    private fun beginSaveExport(
+        dataUri: String,
+        requestedName: String?,
+        contentDisposition: String?,
+        mimeType: String?
+    ) {
+        if (!dataUri.startsWith("data:", ignoreCase = true)) return
+
+        pendingExportName = null
+        pendingExport = null
+        pendingExport = try {
+            DataUriDecoder.decode(dataUri)
+        } catch (e: IOException) {
+            Log.e(TAG, "Failed to decode exported save data", e)
+            Toast.makeText(this, R.string.export_failed, Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val fallbackType = mimeType?.takeIf { it.isNotBlank() }
+            ?: mimeTypeFromDataUri(dataUri)
+            ?: "application/octet-stream"
+        val proposedName = requestedName?.takeIf { it.isNotBlank() }
+            ?: suggestFileName(contentDisposition, fallbackType)
+        val name = proposedName.substringAfterLast('/').substringAfterLast('\\')
+            .ifBlank { suggestFileName(contentDisposition, fallbackType) }
+        val type = mimeFromExtension(name) ?: fallbackType
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            this.type = type
+            addCategory(Intent.CATEGORY_OPENABLE)
+            putExtra(Intent.EXTRA_TITLE, name)
+        }
+        try {
+            startActivityForResult(intent, EXPORT_SAVE_RESULT_CODE)
+        } catch (e: Exception) {
+            pendingExport = null
+            Log.e(TAG, "Unable to open the save-file picker", e)
+            Toast.makeText(this, R.string.export_failed, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun mimeTypeFromDataUri(dataUri: String): String? =
+        dataUri.substringAfter("data:").substringBefore(',').substringBefore(';')
+            .trim()
+            .takeIf { it.contains('/') }
+
     private fun saveExportTo(uri: Uri, bytes: ByteArray) {
-        GlobalScope.launch(Dispatchers.IO) {
-            val ok = runCatching {
-                contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
-                    ?: throw java.io.IOException("openOutputStream returned null")
-            }.isSuccess
-            withContext(Dispatchers.Main) {
+        lifecycleScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                        ?: throw IOException("openOutputStream returned null")
+                }
                 Toast.makeText(
                     this@GameActivity,
-                    if (ok) R.string.export_done else R.string.export_failed,
+                    R.string.export_done,
                     Toast.LENGTH_SHORT
                 ).show()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to save exported game data", e)
+                Toast.makeText(this@GameActivity, R.string.export_failed, Toast.LENGTH_LONG).show()
             }
         }
     }

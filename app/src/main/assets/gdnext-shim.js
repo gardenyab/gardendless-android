@@ -27,11 +27,11 @@
     var TAG = '[gd-next-shim]';
     var ORIGIN = 'https://appassets.androidplatform.net/';
 
-    // ── 全屏与导出文件名 ──
+    // ── 全屏与导出 ──
     // 以下两项在 WebView 下必须由原生接管：
     // - 全屏：polyfill 将 plugin:window|set_fullscreen 实现为空函数，且 WebView 对非 video
     //   元素不回调 onShowCustomView；
-    // - 导出文件名：polyfill 使用 prompt() 询问，而 WebView 不响应 prompt，恒返回 null。
+    // - 导出：WebView 的 DownloadListener 不一定会收到 data: URL，故在链接触发时直接交给原生保存。
 
     // 游戏启动约 2 秒后会按自身状态同步一次 setFullscreen(false)，覆盖掉由原生从
     // SharedPreferences 恢复的全屏状态。因此在启动保护期内忽略这条自动同步的 false；
@@ -50,20 +50,40 @@
         try { bridge.setExportName(String(name)); } catch (e) { /* 忽略 */ }
     }
 
-    // 导出文件名：游戏通过 <a download="文件名" href="data:..."> 配合 click() 触发导出，
-    // 文件名只存在于 a.download 上，不会传给原生，因此在此捕获
     function isDataHref(el) {
         return !!(el && el.getAttribute && (el.getAttribute('href') || '').indexOf('data:') === 0);
     }
 
+    function exportDataUri(anchor) {
+        if (!anchor || !anchor.download || !isDataHref(anchor) ||
+            typeof bridge.exportDataUri !== 'function') return false;
+        try {
+            bridge.exportDataUri(anchor.getAttribute('href'), String(anchor.download));
+            return true;
+        } catch (e) {
+            console.warn(TAG, 'native save dialog could not be opened:', e);
+            return false;
+        }
+    }
+
     var origAnchorClick = HTMLAnchorElement.prototype.click;
     HTMLAnchorElement.prototype.click = function () {
-        if (this.download && isDataHref(this)) setExportName(this.download);
+        if (this.download && isDataHref(this)) {
+            if (exportDataUri(this)) return;
+            setExportName(this.download);
+        }
         return origAnchorClick.apply(this, arguments);
     };
     document.addEventListener('click', function (e) {
         var a = e.target && e.target.closest ? e.target.closest('a[download]') : null;
-        if (a && isDataHref(a)) setExportName(a.getAttribute('download'));
+        if (a && isDataHref(a)) {
+            if (exportDataUri(a)) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+            } else {
+                setExportName(a.getAttribute('download'));
+            }
+        }
     }, true);
 
     // 标准 Fullscreen API 路径（游戏若改用该路径亦可覆盖）

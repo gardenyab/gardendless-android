@@ -18,4 +18,25 @@
     <string name="no">Return</string>
     <string name="hint">Warning</string>
     <string name="description">This is an unofficial port. For details, visit: https://github.com/Cateners/gardendless-android</string>
+    <string name="game_menu_description">Choose a game ZIP downloaded from the Telegram channel.</string>
+    <string name="game_ready_title">Your game is ready</string>
+    <string name="game_setup_title">Set up your game</string>
+    <string name="game_status_installed">GAME INSTALLED</string>
+    <string name="game_status_missing">ZIP REQUIRED</string>
+    <string name="choose_game_zip">Choose game ZIP</string>
+    <string name="update_game_zip">Update game ZIP</string>
+    <string name="launch_game">Launch</string>
+    <string name="download_zip_from_telegram">Download ZIP from Telegram</string>
+    <string name="zip_picker_unavailable">Could not open the file picker</string>
+    <string name="installing_game">Installing game</string>
+    <string name="installing_game_description">Please wait while the ZIP is checked and extracted.</string>
+    <string name="installing_progress">Extracting… %1$d%%</string>
+    <string name="game_zip_installed">Game ZIP installed</string>
+    <string name="game_zip_install_failed">Could not install game ZIP</string>
+    <string name="game_zip_install_error">%1$s</string>
+    <string name="telegram_open_failed">Could not open the Telegram channel</string>
+    <string name="update_warning_title">Update game?</string>
+    <string name="update_warning_message">Updating may make existing saves incompatible or remove them. Export your saves before continuing.</string>
+    <string name="continue_update">Continue</string>
+    <string name="game_dialog_title">Gardendless</string>
 </resources>
