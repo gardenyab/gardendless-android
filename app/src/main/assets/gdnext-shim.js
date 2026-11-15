@@ -54,11 +54,15 @@
         return !!(el && el.getAttribute && (el.getAttribute('href') || '').indexOf('data:') === 0);
     }
 
+    function isBlobHref(el) {
+        return !!(el && el.getAttribute && (el.getAttribute('href') || '').indexOf('blob:') === 0);
+    }
+
     function exportDataUri(anchor) {
-        if (!anchor || !anchor.download || !isDataHref(anchor) ||
+        if (!anchor || !anchor.hasAttribute('download') || !isDataHref(anchor) ||
             typeof bridge.exportDataUri !== 'function') return false;
         try {
-            bridge.exportDataUri(anchor.getAttribute('href'), String(anchor.download));
+            bridge.exportDataUri(anchor.getAttribute('href'), anchor.getAttribute('download') || '');
             return true;
         } catch (e) {
             console.warn(TAG, 'native save dialog could not be opened:', e);
@@ -66,18 +70,76 @@
         }
     }
 
+    function exportBlob(anchor) {
+        if (!anchor || !anchor.hasAttribute('download') || !isBlobHref(anchor) ||
+            typeof bridge.beginExportTransfer !== 'function' ||
+            typeof bridge.appendExportChunk !== 'function' ||
+            typeof bridge.finishExportTransfer !== 'function') return false;
+
+        var fileName = anchor.getAttribute('download') || '';
+        var mimeType = anchor.getAttribute('type') || 'application/octet-stream';
+        try {
+            if (!bridge.beginExportTransfer(fileName, mimeType)) return false;
+        } catch (e) {
+            console.warn(TAG, 'native blob export could not be started:', e);
+            return false;
+        }
+
+        fetch(anchor.getAttribute('href')).then(function (response) {
+            if (!response.ok) throw new Error('blob read failed (' + response.status + ')');
+            return response.blob();
+        }).then(function (blob) {
+            mimeType = blob.type || mimeType;
+            var reader = new FileReader();
+            reader.onerror = function () {
+                bridge.cancelExportTransfer();
+                console.warn(TAG, 'failed to read the exported blob');
+            };
+            reader.onload = function () {
+                try {
+                    var bytes = new Uint8Array(reader.result);
+                    var chunkSize = 48 * 1024;
+                    for (var offset = 0; offset < bytes.length; offset += chunkSize) {
+                        var binary = String.fromCharCode.apply(
+                            null,
+                            bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length))
+                        );
+                        if (!bridge.appendExportChunk(btoa(binary))) {
+                            throw new Error('native export rejected a data chunk');
+                        }
+                    }
+                    if (!bridge.finishExportTransfer(mimeType)) {
+                        throw new Error('native export could not be completed');
+                    }
+                } catch (e) {
+                    bridge.cancelExportTransfer();
+                    console.warn(TAG, 'failed to transfer the exported blob:', e);
+                }
+            };
+            reader.readAsArrayBuffer(blob);
+        }).catch(function (e) {
+            bridge.cancelExportTransfer();
+            console.warn(TAG, 'failed to fetch the exported blob:', e);
+        });
+        return true;
+    }
+
+    function exportDownload(anchor) {
+        return exportDataUri(anchor) || exportBlob(anchor);
+    }
+
     var origAnchorClick = HTMLAnchorElement.prototype.click;
     HTMLAnchorElement.prototype.click = function () {
-        if (this.download && isDataHref(this)) {
-            if (exportDataUri(this)) return;
-            setExportName(this.download);
+        if (this.hasAttribute('download')) {
+            if (exportDownload(this)) return;
+            setExportName(this.getAttribute('download'));
         }
         return origAnchorClick.apply(this, arguments);
     };
     document.addEventListener('click', function (e) {
         var a = e.target && e.target.closest ? e.target.closest('a[download]') : null;
-        if (a && isDataHref(a)) {
-            if (exportDataUri(a)) {
+        if (a && (isDataHref(a) || isBlobHref(a))) {
+            if (exportDownload(a)) {
                 e.preventDefault();
                 e.stopImmediatePropagation();
             } else {
@@ -113,14 +175,15 @@
     // 游戏传给 plugin:fs 的路径为相对 AppData 的路径（如 gp-next\packs\Foo\pack.json），
     // 也可能拼接了 resolve_directory 的返回值而成为绝对路径；此处统一收敛为 "gp-next/xxx"。
     function relPath(rawPath) {
-        var s = String(rawPath == null ? '' : rawPath).replace(/\\/g, '/').replace(/^\/+/, '');
+        var s = String(rawPath == null ? '' : rawPath).replace(/\\/g, '/').replace(/\/+$/, '');
         var root = appDataRoot();
-        if (root && s.indexOf(root + '/') === 0) s = s.slice(root.length + 1);
-        return s;
+        if (root && s === root) return 'gp-next';
+        if (root && s.indexOf(root + '/') === 0) s = s.slice(root.length);
+        return s.replace(/^\/+/, '');
     }
 
     function urlOf(rawPath) {
-        return ORIGIN + relPath(rawPath);
+        return ORIGIN + relPath(rawPath).split('/').map(encodeURIComponent).join('/');
     }
 
     // 按 Tauri 语义，文件不存在时抛错，由游戏侧 catch 成 null / false。
@@ -150,6 +213,47 @@
         if (typeof payload === 'string') return new TextEncoder().encode(payload);
         return new Uint8Array(0);
     }
+
+    function installGameDialogWebViewStyles() {
+        var styleId = 'gardendless-game-dialog-webview-style';
+        var css = [
+            'dialog.game-dialog[open]{display:flex!important;position:fixed!important;',
+            'top:50%!important;left:50%!important;right:auto!important;bottom:auto!important;',
+            'transform:translate(-50%,-50%) scale(.5)!important;transform-origin:center center!important;',
+            'margin:0!important;',
+            'width:calc(100vw - 24px)!important;max-width:900px!important;',
+            'height:80vh!important;max-height:calc(100vh - 24px)!important;',
+            'height:80dvh!important;max-height:calc(100dvh - 24px)!important;',
+            'min-height:200px!important;box-sizing:border-box!important;',
+            'flex-direction:column!important;overflow:hidden!important;',
+            'z-index:2147483647!important}',
+            'dialog.game-dialog[open]>.game-markdown,',
+            'dialog.game-dialog[open]>.game-github,',
+            'dialog.game-dialog[open]>.game-dialog-status{display:flex!important;',
+            'flex:1 1 auto!important;min-height:0!important;width:100%!important;}',
+            'dialog.game-dialog[open]>.game-markdown{display:block!important;overflow:auto!important}',
+            'dialog.game-dialog[open]>.game-github{flex-direction:column!important;overflow:hidden!important}'
+        ].join('');
+
+        function addStyle() {
+            if (document.getElementById(styleId)) return true;
+            var parent = document.head || document.documentElement;
+            if (!parent) return false;
+            var style = document.createElement('style');
+            style.id = styleId;
+            style.textContent = css;
+            parent.appendChild(style);
+            return true;
+        }
+
+        if (addStyle()) return;
+        var observer = new MutationObserver(function () {
+            if (addStyle()) observer.disconnect();
+        });
+        observer.observe(document, { childList: true, subtree: true });
+    }
+
+    installGameDialogWebViewStyles();
 
     // 分块编码，避免大文件在参数展开时导致栈溢出
     function bytesToBase64(bytes) {
@@ -246,18 +350,25 @@
 
             case 'plugin:fs|read_dir': {
                 var json = bridge.fsReadDir(relPath(args.path));
-                return Promise.resolve(json === null ? [] : JSON.parse(json));
+                if (json === null || json === undefined) {
+                    throw new Error('read_dir failed: ' + relPath(args.path));
+                }
+                return Promise.resolve(JSON.parse(json));
             }
 
             case 'plugin:fs|exists':
                 return Promise.resolve(!!bridge.fsExists(relPath(args.path)));
 
             case 'plugin:fs|mkdir':
-                bridge.fsMkdir(relPath(args.path));
+                if (!bridge.fsMkdir(relPath(args.path))) {
+                    throw new Error('mkdir failed: ' + relPath(args.path));
+                }
                 return Promise.resolve(null);
 
             case 'plugin:fs|remove':
-                bridge.fsRemove(relPath(args.path));
+                if (!bridge.fsRemove(relPath(args.path))) {
+                    throw new Error('remove failed: ' + relPath(args.path));
+                }
                 return Promise.resolve(null);
 
             case 'plugin:fs|write_text_file': {
@@ -275,7 +386,7 @@
 
             case 'plugin:opener|open_path':
                 // 目前仅 patcher 页的「打开补丁文件夹」使用，落到系统的 gp-next 文档根
-                try { bridge.openDataFolder(); } catch (e) { /* 忽略 */ }
+                bridge.openDataFolder();
                 return Promise.resolve(null);
         }
         return null;

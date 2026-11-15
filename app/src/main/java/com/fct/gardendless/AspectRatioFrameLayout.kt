@@ -21,14 +21,14 @@ import android.widget.FrameLayout
 /**
  * 游戏画面容器（黑底，兼作黑边）。
  *
- * 负责把唯一的子 View（WebView）约束在 16:10 ~ 17:9 的比例区间内，区间外留黑边；
- * [fullscreen] 为 true 时子 View 直接铺满整个容器。
+ * 负责把内容 View（WebView）约束在 16:10 ~ 17:9 的比例区间内，区间外留黑边；
+ * 其他子 View 可用作容器上方的原生控件。[fullscreen] 为 true 时内容 View 铺满容器。
  */
 class AspectRatioFrameLayout @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
 ) : FrameLayout(context, attrs) {
 
-    /** true：子 View 铺满容器；false：按 16:10 ~ 17:9 约束 */
+    /** true：内容 View 铺满容器；false：按 16:10 ~ 17:9 约束 */
     var fullscreen: Boolean = false
         set(value) {
             if (field == value) return

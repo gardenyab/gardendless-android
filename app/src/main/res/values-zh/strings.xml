@@ -40,4 +40,6 @@
     <string name="update_warning_message">更新可能导致现有存档不兼容或丢失。继续前请先导出存档。</string>
     <string name="continue_update">继续</string>
     <string name="game_dialog_title">Gardendless</string>
+    <string name="gp_next">GP-Next</string>
+    <string name="gp_next_button_description">打开 GP-Next 菜单</string>
 </resources>

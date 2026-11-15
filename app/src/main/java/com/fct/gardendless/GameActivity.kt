@@ -30,6 +30,7 @@ import android.text.InputType
 import android.util.Base64
 import android.util.Log
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
@@ -50,6 +51,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewAssetLoader.InternalStoragePathHandler
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import com.google.android.material.color.DynamicColors
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.button.MaterialButton
@@ -64,6 +67,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import androidx.core.net.toUri
 import org.json.JSONArray
@@ -82,6 +86,9 @@ class GameActivity : AppCompatActivity() {
      * 因此数据实际位于 filesDir/gp-next，与 GameDocumentsProvider 的 gpnext 根指向同一目录。
      */
     private val gpNextDir: File by lazy { File(filesDir, GP_NEXT_DIR_NAME).apply { mkdirs() } }
+    private val gpNextPathResolver: GpNextPathResolver by lazy {
+        GpNextPathResolver(filesDir, gpNextDir)
+    }
 
     /**
      * 注入页面的 Tauri shim（assets/gdnext-shim.js）。
@@ -105,8 +112,18 @@ class GameActivity : AppCompatActivity() {
 
     // 导出流程中解出的存档内容，等待用户在保存对话框里选定目标后再写入
     private var pendingExport: ByteArray? = null
+    private var pendingExportFile: File? = null
     // 游戏经 Tauri dialog.save 给出的文件名，可能覆盖默认建议名
     private var pendingExportName: String? = null
+    private val exportTransferLock = Any()
+    private var activeExportTransfer: ExportTransfer? = null
+
+    private data class ExportTransfer(
+        val file: File,
+        val fileName: String,
+        val mimeType: String,
+        val output: FileOutputStream
+    )
 
     // 网页全屏（HTML5 Fullscreen API）回调，非空表示当前处于全屏
     private var fullscreenCallback: CustomViewCallback? = null
@@ -181,6 +198,30 @@ class GameActivity : AppCompatActivity() {
                         android.view.ViewGroup.LayoutParams.WRAP_CONTENT
                     ).apply { gravity = android.view.Gravity.CENTER }
                 )
+                addView(
+                    MaterialButton(this@GameActivity).apply {
+                        text = getString(R.string.gp_next)
+                        icon = androidx.appcompat.content.res.AppCompatResources.getDrawable(
+                            this@GameActivity,
+                            R.drawable.ic_tune
+                        )
+                        iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
+                        iconPadding = dp(8)
+                        cornerRadius = dp(20)
+                        insetTop = 0
+                        insetBottom = 0
+                        minHeight = dp(44)
+                        contentDescription = getString(R.string.gp_next_button_description)
+                        setOnClickListener { toggleGpNextMenu() }
+                    },
+                    android.widget.FrameLayout.LayoutParams(
+                        android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                        dp(44),
+                        android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
+                    ).apply {
+                        marginEnd = dp(8)
+                    }
+                )
             }
 
             // 将容器设置为 Content View
@@ -240,6 +281,22 @@ class GameActivity : AppCompatActivity() {
                     webView.post { beginSaveExport(dataUri, fileName, null, null) }
                 }
 
+                @JavascriptInterface
+                fun beginExportTransfer(fileName: String, mimeType: String): Boolean =
+                    beginExportTransferNative(fileName, mimeType)
+
+                @JavascriptInterface
+                fun appendExportChunk(base64: String): Boolean = appendExportChunkNative(base64)
+
+                @JavascriptInterface
+                fun finishExportTransfer(mimeType: String): Boolean =
+                    finishExportTransferNative(mimeType)
+
+                @JavascriptInterface
+                fun cancelExportTransfer() {
+                    cancelExportTransferNative()
+                }
+
                 // ── gp-next 数据目录（Tauri plugin:path / plugin:fs 的落地实现）──
 
                 /** plugin:path|resolve_directory(14)：返回 AppData 根，游戏会自行拼上 /gp-next */
@@ -248,7 +305,7 @@ class GameActivity : AppCompatActivity() {
 
                 /** plugin:fs|read_dir：返回 [{name, isFile, isDirectory, isSymlink}] 形式的 JSON */
                 @JavascriptInterface
-                fun fsReadDir(rel: String): String = gpNextReadDir(rel)
+                fun fsReadDir(rel: String): String? = gpNextReadDir(rel)
 
                 /**
                  * plugin:fs|stat 与 plugin:fs|lstat。
@@ -289,6 +346,16 @@ class GameActivity : AppCompatActivity() {
                 }
             }, "GardendlessBridge")
 
+            val shimAtDocumentStart = gpNextShimJs.isNotEmpty() &&
+                WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)
+            if (shimAtDocumentStart) {
+                WebViewCompat.addDocumentStartJavaScript(
+                    webView,
+                    gpNextShimJs,
+                    setOf("https://appassets.androidplatform.net")
+                )
+            }
+
             webView.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
                 beginSaveExport(url, pendingExportName, contentDisposition, mimeType)
             }
@@ -298,7 +365,10 @@ class GameActivity : AppCompatActivity() {
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                     val url = request?.url?.toString() ?: return false
 
-                    if (url.startsWith("https://appassets.androidplatform.net/")) {
+                    if (url.startsWith("https://appassets.androidplatform.net/") ||
+                        url.startsWith("data:") ||
+                        url.startsWith("blob:")
+                    ) {
                         return false
                     }
 
@@ -319,7 +389,9 @@ class GameActivity : AppCompatActivity() {
                  */
                 override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                     super.onPageStarted(view, url, favicon)
-                    if (gpNextShimJs.isNotEmpty()) view?.evaluateJavascript(gpNextShimJs, null)
+                    if (!shimAtDocumentStart && gpNextShimJs.isNotEmpty()) {
+                        view?.evaluateJavascript(gpNextShimJs, null)
+                    }
                     val js = """
 (function() {
     const target = document.getElementById("GameCanvas");
@@ -345,6 +417,13 @@ class GameActivity : AppCompatActivity() {
                     }, 8000)
                 }
 
+                override fun onPageCommitVisible(view: WebView?, url: String?) {
+                    super.onPageCommitVisible(view, url)
+                    if (!shimAtDocumentStart && gpNextShimJs.isNotEmpty()) {
+                        view?.evaluateJavascript(gpNextShimJs, null)
+                    }
+                }
+
                 override fun shouldInterceptRequest(
                     view: WebView,
                     request: WebResourceRequest
@@ -354,6 +433,16 @@ class GameActivity : AppCompatActivity() {
                 }
             }
             webView.webChromeClient = object : WebChromeClient() {
+                override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
+                    val message = "${consoleMessage.message()} (${consoleMessage.sourceId()}:${consoleMessage.lineNumber()})"
+                    when (consoleMessage.messageLevel()) {
+                        ConsoleMessage.MessageLevel.ERROR -> Log.e(TAG, "WebView: $message")
+                        ConsoleMessage.MessageLevel.WARNING -> Log.w(TAG, "WebView: $message")
+                        else -> Log.d(TAG, "WebView: $message")
+                    }
+                    return true
+                }
+
                 override fun onShowFileChooser(
                     webView: WebView?,
                     filePathCallback: ValueCallback<Array<Uri>>?,
@@ -818,10 +907,25 @@ class GameActivity : AppCompatActivity() {
         }
     }
 
+    private fun toggleGpNextMenu() {
+        webView.evaluateJavascript(
+            "(function(){var api=window.gpNext;try{if(api&&typeof api.toggle==='function'){api.toggle();return true;}}catch(e){console.warn('GP-Next toggle failed',e);}return false;})()"
+        ) { result ->
+            if (result != "true") {
+                Log.i(TAG, "GP-Next toggle API unavailable; dispatching F9 to WebView")
+                webView.requestFocus()
+                webView.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_F9))
+                webView.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_F9))
+            }
+        }
+    }
+
     override fun onDestroy() {
         // 页面若仍处于全屏，通知 WebView 退出，避免其内部状态残留
         fullscreenCallback?.onCustomViewHidden()
         fullscreenCallback = null
+        cancelExportTransferNative()
+        pendingExportFile?.delete()
         super.onDestroy()
     }
 
@@ -840,9 +944,17 @@ class GameActivity : AppCompatActivity() {
             EXPORT_SAVE_RESULT_CODE -> {
                 val bytes = pendingExport
                 pendingExport = null
+                val file = pendingExportFile
+                pendingExportFile = null
                 // 用户取消保存时 data 为 null，直接丢弃暂存内容
                 val uri = data?.data
-                if (bytes != null && uri != null) saveExportTo(uri, bytes)
+                if (uri == null) {
+                    file?.delete()
+                } else if (bytes != null) {
+                    saveExportTo(uri, bytes)
+                } else if (file != null) {
+                    saveExportFileTo(uri, file)
+                }
             }
         }
     }
@@ -855,24 +967,59 @@ class GameActivity : AppCompatActivity() {
     ) {
         if (!dataUri.startsWith("data:", ignoreCase = true)) return
 
-        pendingExportName = null
-        pendingExport = null
-        pendingExport = try {
+        val bytes = try {
             DataUriDecoder.decode(dataUri)
         } catch (e: IOException) {
             Log.e(TAG, "Failed to decode exported save data", e)
             Toast.makeText(this, R.string.export_failed, Toast.LENGTH_LONG).show()
             return
         }
-
-        val fallbackType = mimeType?.takeIf { it.isNotBlank() }
+        val type = mimeType?.takeIf { it.isNotBlank() }
             ?: mimeTypeFromDataUri(dataUri)
             ?: "application/octet-stream"
+        beginSaveExport(bytes, requestedName, contentDisposition, type)
+    }
+
+    private fun beginSaveExport(
+        bytes: ByteArray,
+        requestedName: String?,
+        contentDisposition: String?,
+        mimeType: String?
+    ) {
+        pendingExportName = null
+        pendingExport = bytes
+        pendingExportFile?.delete()
+        pendingExportFile = null
+
+        val fallbackType = mimeType?.takeIf { it.isNotBlank() } ?: "application/octet-stream"
+        val name = exportFileName(requestedName, contentDisposition, fallbackType)
+        launchExportSaveDialog(name, mimeFromExtension(name) ?: fallbackType)
+    }
+
+    private fun beginSaveExport(file: File, requestedName: String?, mimeType: String?) {
+        pendingExportName = null
+        pendingExport = null
+        pendingExportFile?.delete()
+        pendingExportFile = file
+
+        val fallbackType = mimeType?.takeIf { it.isNotBlank() } ?: "application/octet-stream"
+        val name = exportFileName(requestedName, null, fallbackType)
+        launchExportSaveDialog(name, mimeFromExtension(name) ?: fallbackType)
+    }
+
+    private fun exportFileName(
+        requestedName: String?,
+        contentDisposition: String?,
+        mimeType: String
+    ): String {
         val proposedName = requestedName?.takeIf { it.isNotBlank() }
-            ?: suggestFileName(contentDisposition, fallbackType)
+            ?: suggestFileName(contentDisposition, mimeType)
         val name = proposedName.substringAfterLast('/').substringAfterLast('\\')
-            .ifBlank { suggestFileName(contentDisposition, fallbackType) }
-        val type = mimeFromExtension(name) ?: fallbackType
+            .ifBlank { suggestFileName(contentDisposition, mimeType) }
+        return name
+    }
+
+    private fun launchExportSaveDialog(name: String, type: String) {
         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
             this.type = type
             addCategory(Intent.CATEGORY_OPENABLE)
@@ -882,6 +1029,8 @@ class GameActivity : AppCompatActivity() {
             startActivityForResult(intent, EXPORT_SAVE_RESULT_CODE)
         } catch (e: Exception) {
             pendingExport = null
+            pendingExportFile?.delete()
+            pendingExportFile = null
             Log.e(TAG, "Unable to open the save-file picker", e)
             Toast.makeText(this, R.string.export_failed, Toast.LENGTH_LONG).show()
         }
@@ -910,6 +1059,112 @@ class GameActivity : AppCompatActivity() {
                 Log.e(TAG, "Failed to save exported game data", e)
                 Toast.makeText(this@GameActivity, R.string.export_failed, Toast.LENGTH_LONG).show()
             }
+        }
+    }
+
+    private fun saveExportFileTo(uri: Uri, file: File) {
+        lifecycleScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    val output = contentResolver.openOutputStream(uri)
+                        ?: throw IOException("openOutputStream returned null")
+                    output.use { destination ->
+                        file.inputStream().use { source -> source.copyTo(destination) }
+                    }
+                }
+                Toast.makeText(
+                    this@GameActivity,
+                    R.string.export_done,
+                    Toast.LENGTH_SHORT
+                ).show()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to save exported game data", e)
+                Toast.makeText(this@GameActivity, R.string.export_failed, Toast.LENGTH_LONG).show()
+            } finally {
+                file.delete()
+            }
+        }
+    }
+
+    private fun beginExportTransferNative(fileName: String, mimeType: String): Boolean =
+        synchronized(exportTransferLock) {
+            if (activeExportTransfer != null) return@synchronized false
+            try {
+                val file = File.createTempFile("gardendless-export-", ".tmp", cacheDir)
+                activeExportTransfer = ExportTransfer(
+                    file = file,
+                    fileName = fileName,
+                    mimeType = mimeType,
+                    output = FileOutputStream(file)
+                )
+                true
+            } catch (e: IOException) {
+                Log.e(TAG, "Unable to start streamed export", e)
+                runOnUiThread {
+                    Toast.makeText(this, R.string.export_failed, Toast.LENGTH_LONG).show()
+                }
+                false
+            }
+        }
+
+    private fun appendExportChunkNative(base64: String): Boolean =
+        synchronized(exportTransferLock) {
+            val transfer = activeExportTransfer ?: return@synchronized false
+            try {
+                transfer.output.write(Base64.decode(base64, Base64.DEFAULT))
+                true
+            } catch (e: IllegalArgumentException) {
+                Log.e(TAG, "Invalid base64 data in streamed export", e)
+                discardActiveExportTransferLocked()
+                false
+            } catch (e: IOException) {
+                Log.e(TAG, "Unable to write streamed export data", e)
+                discardActiveExportTransferLocked()
+                false
+            }
+        }
+
+    private fun finishExportTransferNative(mimeType: String): Boolean {
+        val transfer = synchronized(exportTransferLock) {
+            val active = activeExportTransfer ?: return false
+            try {
+                active.output.close()
+            } catch (e: IOException) {
+                Log.e(TAG, "Unable to finish streamed export", e)
+                discardActiveExportTransferLocked()
+                return false
+            }
+            activeExportTransfer = null
+            active.copy(mimeType = mimeType.takeIf { it.isNotBlank() } ?: active.mimeType)
+        }
+        runOnUiThread {
+            if (isFinishing || isDestroyed) {
+                transfer.file.delete()
+            } else {
+                beginSaveExport(transfer.file, transfer.fileName, transfer.mimeType)
+            }
+        }
+        return true
+    }
+
+    private fun cancelExportTransferNative() {
+        synchronized(exportTransferLock) {
+            discardActiveExportTransferLocked()
+        }
+    }
+
+    private fun discardActiveExportTransferLocked() {
+        val transfer = activeExportTransfer ?: return
+        activeExportTransfer = null
+        try {
+            transfer.output.close()
+        } catch (e: IOException) {
+            Log.w(TAG, "Unable to close incomplete export", e)
+        }
+        if (!transfer.file.delete() && transfer.file.exists()) {
+            Log.w(TAG, "Unable to delete incomplete export file")
         }
     }
 
@@ -984,24 +1239,17 @@ class GameActivity : AppCompatActivity() {
      * 把 gp-next 相对路径解析为 filesDir 下的真实文件。
      * 越界或非法输入一律收敛到数据根目录，避免逃逸到 filesDir 的其他位置。
      */
-    private fun gpNextFile(rawPath: String): File {
-        val root = gpNextDir.canonicalFile
-        val rootPrefix = root.path + File.separator
-        val filesPrefix = filesDir.absolutePath.replace('\\', '/').trimEnd('/') + '/'
-        val normalized = rawPath.replace('\\', '/').trimStart('/')
-        // 游戏可能传入已拼接 base path 的绝对路径，先还原为相对形式
-        val relative =
-            if (normalized.startsWith(filesPrefix)) normalized.removePrefix(filesPrefix) else normalized
-        val candidate = File(filesDir, relative).canonicalFile
-        return if (candidate.path == root.path || candidate.path.startsWith(rootPrefix)) candidate else root
-    }
+    private fun gpNextFile(rawPath: String): File = gpNextPathResolver.resolve(rawPath)
 
     /**
      * 返回 [{name, isFile, isDirectory, isSymlink}] 形式的 JSON；目录不存在时返回空数组。
      */
-    private fun gpNextReadDir(rawPath: String): String {
+    private fun gpNextReadDir(rawPath: String): String? {
+        val directory = gpNextFile(rawPath)
+        if (!directory.isDirectory) return null
+        val children = directory.listFiles() ?: return null
         val entries = JSONArray()
-        gpNextFile(rawPath).listFiles()?.forEach { file ->
+        children.forEach { file ->
             entries.put(JSONObject().apply {
                 put("name", file.name)
                 put("isFile", file.isFile)

@@ -1,8 +1,6 @@
 package com.fct.gardendless
 
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
 import android.util.AttributeSet
 import android.view.InputDevice
 import android.view.MotionEvent
@@ -12,9 +10,7 @@ import kotlin.math.abs
 /**
  * 把触摸手势转换为鼠标事件，供游戏使用。
  *
- * 事件注入分两条路径：
- * - 移动与滚轮使用 native MotionEvent（SOURCE_MOUSE），以保证流畅度；
- * - 左键按下/抬起与右键点击使用 JS MouseEvent，直接派发到 GameCanvas。
+ * 只把命中游戏 canvas 的手势转换为鼠标事件；DOM 覆盖层继续接收原始 WebView 触摸事件。
  *
  * 手势映射：
  * - 单指拖动：左键按下 → 移动 → 抬起；
@@ -25,7 +21,6 @@ class MouseGameWebView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
 ) : WebView(context, attrs) {
 
-    private val mainHandler = Handler(Looper.getMainLooper())
     private var isDragging = false
     private var lastScrollY = 0f
     private var touchStartCenterX = 0f
@@ -33,7 +28,6 @@ class MouseGameWebView @JvmOverloads constructor(
     private var hasMovedEnough = false
     private val moveThreshold = 20f
     private var maxTouches = 0
-    private var isTouching = false
 
     // 获取屏幕密度，用于将物理像素转换为CSS像素
     private val density = context.resources.displayMetrics.density
@@ -50,22 +44,18 @@ class MouseGameWebView @JvmOverloads constructor(
         when (action) {
             MotionEvent.ACTION_DOWN -> {
                 if (pointerCount == 1) {
-                    isTouching = true
-                    val dx = event.x
-                    val dy = event.y
-
-                    if (isTouching && maxTouches == 1) {
-                        // 左键按下（JS 事件，button 0）
-                        injectJsMouseEvent(dx, dy, "mousedown", 0)
-                        isDragging = true
-                    }
-                    return super.dispatchTouchEvent(event)
+                    // JS dispatch targets GameCanvas only. DOM overlays receive the native touch.
+                    injectJsMouseEvent(event.x, event.y, "mousedown", 0)
+                    isDragging = true
                 }
             }
 
             MotionEvent.ACTION_POINTER_DOWN -> {
                 if (pointerCount == 2) {
                     // 进入双指手势，取消左键拖拽
+                    if (isDragging) {
+                        injectJsMouseEvent(event.getX(0), event.getY(0), "mouseup", 0)
+                    }
                     isDragging = false
                     hasMovedEnough = false
                     val cx = (event.getX(0) + event.getX(1)) / 2
@@ -74,15 +64,13 @@ class MouseGameWebView @JvmOverloads constructor(
                     touchStartCenterY = cy
                     lastScrollY = cy
 
-                    // 双指按下瞬间，先在两指中点补发一次 native 移动
-                    injectMouseEventAt(cx, cy, MotionEvent.ACTION_MOVE, MotionEvent.BUTTON_PRIMARY)
+                    injectJsMouseEvent(cx, cy, "mousemove", 0)
                 }
             }
 
             MotionEvent.ACTION_MOVE -> {
-                // 移动统一使用 native 事件，以保证流畅度
                 if (pointerCount == 1 && isDragging) {
-                    injectMouseEventAt(event.x, event.y, MotionEvent.ACTION_MOVE, MotionEvent.BUTTON_PRIMARY)
+                    injectJsMouseEvent(event.x, event.y, "mousemove", 0)
                 } else if (pointerCount == 2) {
                     val cx = (event.getX(0) + event.getX(1)) / 2
                     val cy = (event.getY(0) + event.getY(1)) / 2
@@ -91,8 +79,11 @@ class MouseGameWebView @JvmOverloads constructor(
                     if (hasMovedEnough || deltaTotal > moveThreshold) {
                         hasMovedEnough = true
                         val scrollDelta = cy - lastScrollY
-                        // 滚轮使用 native 事件
-                        injectScrollEventAt(touchStartCenterX, touchStartCenterY, scrollDelta * 2)
+                        injectCanvasWheelEventAt(
+                            touchStartCenterX,
+                            touchStartCenterY,
+                            scrollDelta * 2
+                        )
                         lastScrollY = cy
                     }
                 }
@@ -100,33 +91,40 @@ class MouseGameWebView @JvmOverloads constructor(
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
                 if (action == MotionEvent.ACTION_UP) {
-                    isTouching = false
-                    mainHandler.removeCallbacksAndMessages(null)
-
                     if (maxTouches == 1 && isDragging) {
                         // 左键抬起（JS 事件）
                         injectJsMouseEvent(event.x, event.y, "mouseup", 0)
                         maxTouches = 0
                         isDragging = false
                         hasMovedEnough = false
-                        return super.dispatchTouchEvent(event)
                     }
                     else if (maxTouches == 2 && !hasMovedEnough) {
                         // 双指轻点：右键点击
                         injectRightClickAt(touchStartCenterX, touchStartCenterY)
                     }
 
-                    maxTouches = 0
-                    isDragging = false
-                    hasMovedEnough = false
+                    if (action == MotionEvent.ACTION_UP) {
+                        maxTouches = 0
+                        isDragging = false
+                        hasMovedEnough = false
+                    }
                 }
             }
+
+            MotionEvent.ACTION_CANCEL -> {
+                if (isDragging) {
+                    injectJsMouseEvent(event.x, event.y, "mouseup", 0)
+                }
+                maxTouches = 0
+                isDragging = false
+                hasMovedEnough = false
+            }
         }
-        return true
+        return super.dispatchTouchEvent(event)
     }
 
     /**
-     * 向页面注入 JS MouseEvent，并直接派发到 GameCanvas。
+     * Canvas input is translated to mouse events; DOM overlays keep native WebView touch behavior.
      *
      * @param x 物理像素 X 坐标
      * @param y 物理像素 Y 坐标
@@ -141,7 +139,10 @@ class MouseGameWebView @JvmOverloads constructor(
         // 构建 JS 脚本
         val js = """
             (function() {
-                var element = document.getElementById("GameCanvas");
+                var canvas = document.getElementById("GameCanvas");
+                if (!canvas) return;
+                var element = document.elementFromPoint($cssX, $cssY);
+                if (element !== canvas && !canvas.contains(element)) return;
                 var ev = new MouseEvent('$type', {
                     view: window,
                     bubbles: true,
@@ -159,37 +160,31 @@ class MouseGameWebView @JvmOverloads constructor(
         this.evaluateJavascript(js, null)
     }
 
-    /** 注入 native 鼠标事件，用于移动 */
-    private fun injectMouseEventAt(x: Float, y: Float, action: Int, buttonState: Int) {
-        val props = arrayOf(MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_MOUSE })
-        val coords = arrayOf(MotionEvent.PointerCoords().apply { this.x = x; this.y = y })
-        val ev = MotionEvent.obtain(
-            System.currentTimeMillis(), System.currentTimeMillis(), action,
-            1, props, coords, 0, buttonState, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0
-        )
-        super.dispatchTouchEvent(ev)
-        ev.recycle()
+    /** Two-finger game scrolling is sent only to the canvas; DOM controls retain native scrolling. */
+    private fun injectCanvasWheelEventAt(x: Float, y: Float, delta: Float) {
+        val cssX = x / density
+        val cssY = y / density
+        val js = """
+            (function() {
+                var canvas = document.getElementById("GameCanvas");
+                if (!canvas) return;
+                var element = document.elementFromPoint($cssX, $cssY);
+                if (element !== canvas && !canvas.contains(element)) return;
+                element.dispatchEvent(new WheelEvent("wheel", {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: $cssX,
+                    clientY: $cssY,
+                    deltaY: $delta
+                }));
+            })();
+        """.trimIndent()
+        evaluateJavascript(js, null)
     }
 
-    /** 注入 native 滚轮事件，用于双指滑动 */
-    private fun injectScrollEventAt(x: Float, y: Float, delta: Float) {
-        val props = arrayOf(MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_MOUSE })
-        val coords = arrayOf(MotionEvent.PointerCoords().apply {
-            this.x = x; this.y = y
-            setAxisValue(MotionEvent.AXIS_VSCROLL, delta / 15f)
-        })
-        val ev = MotionEvent.obtain(
-            System.currentTimeMillis(), System.currentTimeMillis(), MotionEvent.ACTION_SCROLL,
-            1, props, coords, 0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0
-        )
-        super.dispatchGenericMotionEvent(ev)
-        ev.recycle()
-    }
-
-    /** 右键点击：只注入 JS 的按下与抬起 */
+    /** 右键点击 is routed to the canvas only. */
     private fun injectRightClickAt(x: Float, y: Float) {
-        // 备选方案：先以 native 事件把光标移到目标位置（当前未启用）
-        // injectMouseEventAt(x, y, MotionEvent.ACTION_MOVE, MotionEvent.BUTTON_PRIMARY)
+        injectJsMouseEvent(x, y, "mousemove", 0)
         injectJsMouseEvent(x, y, "mousedown", 2)
         injectJsMouseEvent(x, y, "mouseup", 2)
     }

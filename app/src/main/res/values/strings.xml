@@ -39,4 +39,6 @@
     <string name="update_warning_message">Updating may make existing saves incompatible or remove them. Export your saves before continuing.</string>
     <string name="continue_update">Continue</string>
     <string name="game_dialog_title">Gardendless</string>
+    <string name="gp_next">GP-Next</string>
+    <string name="gp_next_button_description">Open GP-Next menu</string>
 </resources>

@@ -38,4 +38,6 @@
     <string name="update_warning_message">После обновления сохранения могут стать несовместимыми или потеряться. Перед продолжением экспортируйте их.</string>
     <string name="continue_update">Продолжить</string>
     <string name="game_dialog_title">Gardendless</string>
+    <string name="gp_next">GP-Next</string>
+    <string name="gp_next_button_description">Открыть меню GP-Next</string>
 </resources>
