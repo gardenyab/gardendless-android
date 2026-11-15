@@ -1,28 +1,28 @@
-# Gardendless для Android
+# Gardendless for Android
 
-Неофициальный Android-порт веб-версии **Plants vs. Zombies 2: Gardendless**. Игра запускается локально во встроенном WebView; игровые файлы устанавливаются из ZIP-архива отдельно от APK.
+An unofficial Android port of the web version of **Plants vs. Zombies 2: Gardendless**. The game runs locally in the built-in WebView; game files are installed separately from the APK using a ZIP archive.
 
-## Возможности
+## Features
 
-- Лаунчер на Material Design 3 с портретной и альбомной раскладкой.
-- Запуск игры в альбомной ориентации.
-- Импорт сохранения через системный выбор файлов.
-- Управление касаниями: одно касание работает как левая кнопка мыши, два пальца — прокрутка, одновременное касание двумя пальцами — правая кнопка.
-- Поддержка GP-Next и локального хранения его данных.
+- Material Design 3 launcher with portrait and landscape layouts.
+- Runs the game in landscape orientation.
+- Imports saves using the system file picker.
+- Touch controls: one-finger touch acts as the left mouse button, two-finger touch scrolls, and simultaneous two-finger touch acts as the right mouse button.
+- Supports GP-Next and local storage for its data.
 
-## Установка игры
+## Installing the game
 
-1. Нажмите **«Скачать ZIP из Telegram»** и скачайте игровой архив из [нашего канала](https://t.me/pvz2gardendless).
-2. Вернитесь в приложение и нажмите **«Выбрать ZIP игры»**.
-3. Найдите скачанный файл и дождитесь распаковки. После установки нажмите **«Запустить»**.
+1. Tap **"Download ZIP from Telegram"** and download the game archive from [our channel](https://t.me/pvz2gardendless).
+2. Return to the app and tap **"Select game ZIP"**.
+3. Find the downloaded file and wait for it to be extracted. Once installed, tap **"Launch"**.
 
-Архив должен содержать `index.html` и ресурсы игры. Поддерживаются, например, `index.html` в корне архива или `docs/index.html`. Установленные файлы сохраняются между запусками приложения.
+The archive must contain `index.html` and the game resources. For example, `index.html` can be in the archive root or in `docs/index.html`. Installed files are preserved between app launches.
 
-Для обновления выберите **«Обновить ZIP игры»** и укажите новый архив.
+To update, select **"Update game ZIP"** and choose the new archive.
 
-## Подготовка ZIP из Docker-образа
+## Preparing a ZIP from the Docker image
 
-Приложение не запускает Docker и не скачивает образ самостоятельно. Для ручного извлечения файлов на компьютере с Docker:
+The app does not run Docker or download the image itself. To manually extract the files on a computer with Docker:
 
 ```powershell
 docker pull ghcr.io/gzh0821/pvzge_web:latest
@@ -31,21 +31,21 @@ docker cp pvzge-temp:/usr/share/nginx/html .\gardendless-game
 docker rm pvzge-temp
 ```
 
-Создайте ZIP из папки `gardendless-game` и импортируйте в игре.
+Create a ZIP from the `gardendless-game` folder and import it into the game.
 
-## Сборка
+## Building
 
-Требуются Android Studio, Android SDK 36 и JDK 21. Игровой ZIP добавлять в проект или APK не нужно.
+Android Studio, Android SDK 36, and JDK 21 are required. You do not need to add the game ZIP to the project or APK.
 
-В Windows:
+On Windows:
 
 ```powershell
 .\gradlew.bat :app:assembleDebug
 .\gradlew.bat :app:assembleRelease
 ```
 
-## Источники и лицензия
+## Sources and license
 
-- Исходная веб-игра: [Gzh0821/pvzge_web](https://github.com/Gzh0821/pvzge_web).
-- Telegram-канал с ZIP-архивами: [pvz2gardendless](https://t.me/pvz2gardendless).
-- Приложение распространяется по GNU GPL v3; текст лицензии находится в [LICENSE](LICENSE).
+- Original web game: [Gzh0821/pvzge_web](https://github.com/Gzh0821/pvzge_web).
+- Telegram channel with ZIP archives: [pvz2gardendless](https://t.me/pvz2gardendless).
+- The app is distributed under the GNU GPL v3; the license text is in [LICENSE](LICENSE).
