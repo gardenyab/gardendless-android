@@ -20,11 +20,27 @@
 (function () {
     'use strict';
 
+    var TAG = '[gd-next-shim]';
     var bridge = window.GardendlessBridge;
+    var electronApi = window.electronAPI;
+    if (!electronApi || typeof electronApi !== 'object') {
+        electronApi = {};
+        window.electronAPI = electronApi;
+    }
+    if (typeof electronApi.window !== 'function') {
+        electronApi.window = function () {
+            if (bridge && typeof bridge.setFullscreen === 'function') {
+                bridge.setFullscreen(false);
+            }
+        };
+    }
+
+    installGameDialogWebViewStyles();
+    installGameTouchInput();
+    installLocalStorageBackup();
     if (!bridge || window.__gdHooked) return;
     window.__gdHooked = true;
 
-    var TAG = '[gd-next-shim]';
     var ORIGIN = 'https://appassets.androidplatform.net/';
 
     // ── 全屏与导出 ──
@@ -216,10 +232,11 @@
 
     function installGameDialogWebViewStyles() {
         var styleId = 'gardendless-game-dialog-webview-style';
+        var stylesheetId = 'gardendless-game-dialog-stylesheet';
         var css = [
             'dialog.game-dialog[open]{display:flex!important;position:fixed!important;',
             'top:50%!important;left:50%!important;right:auto!important;bottom:auto!important;',
-            'transform:translate(-50%,-50%) scale(.5)!important;transform-origin:center center!important;',
+            'transform:translate(-50%,-50%) scale(.46)!important;transform-origin:center center!important;',
             'margin:0!important;',
             'width:calc(100vw - 24px)!important;max-width:900px!important;',
             'height:80vh!important;max-height:calc(100vh - 24px)!important;',
@@ -235,10 +252,24 @@
             'dialog.game-dialog[open]>.game-github{flex-direction:column!important;overflow:hidden!important}'
         ].join('');
 
+        function ensureGameWindowStylesheet(parent) {
+            if (document.querySelector('link[rel="stylesheet"][href*="game-window"]') ||
+                document.getElementById(stylesheetId)) return;
+            var link = document.createElement('link');
+            link.id = stylesheetId;
+            link.rel = 'stylesheet';
+            link.href = new URL('game-window.css', document.baseURI).href;
+            link.onerror = function () {
+                console.warn(TAG, 'Could not load the game window stylesheet:', link.href);
+            };
+            parent.appendChild(link);
+        }
+
         function addStyle() {
-            if (document.getElementById(styleId)) return true;
             var parent = document.head || document.documentElement;
             if (!parent) return false;
+            ensureGameWindowStylesheet(parent);
+            if (document.getElementById(styleId)) return true;
             var style = document.createElement('style');
             style.id = styleId;
             style.textContent = css;
@@ -253,7 +284,225 @@
         observer.observe(document, { childList: true, subtree: true });
     }
 
-    installGameDialogWebViewStyles();
+    function installGameTouchInput() {
+        if (window.__gdGameTouchInputInstalled) return;
+        window.__gdGameTouchInputInstalled = true;
+
+        var gesture = null;
+        var moveThreshold = 20;
+
+        function canvasFor(target) {
+            if (!target) return null;
+            if (target.id === 'GameCanvas' && target.tagName === 'CANVAS') return target;
+            return target.closest ? target.closest('canvas#GameCanvas') : null;
+        }
+
+        function findTouch(touches, identifier) {
+            for (var i = 0; i < touches.length; i++) {
+                if (touches[i].identifier === identifier) return touches[i];
+            }
+            return null;
+        }
+
+        function midpoint(first, second) {
+            return {
+                clientX: (first.clientX + second.clientX) / 2,
+                clientY: (first.clientY + second.clientY) / 2,
+                screenX: (first.screenX + second.screenX) / 2,
+                screenY: (first.screenY + second.screenY) / 2
+            };
+        }
+
+        function dispatchMouse(canvas, type, point, button, buttons) {
+            canvas.dispatchEvent(new MouseEvent(type, {
+                view: window,
+                bubbles: true,
+                cancelable: true,
+                screenX: point.screenX,
+                screenY: point.screenY,
+                clientX: point.clientX,
+                clientY: point.clientY,
+                button: button,
+                buttons: buttons
+            }));
+        }
+
+        function stopNativeTouch(event) {
+            if (event.cancelable) event.preventDefault();
+            event.stopImmediatePropagation();
+        }
+
+        document.addEventListener('touchstart', function (event) {
+            if (gesture) {
+                stopNativeTouch(event);
+                if (gesture.fingers === 1 && event.touches.length === 2) {
+                    var primaryTouch = findTouch(event.touches, gesture.identifier);
+                    var secondTouch = event.changedTouches[0];
+                    if (primaryTouch && secondTouch) {
+                        dispatchMouse(gesture.canvas, 'mouseup', primaryTouch, 0, 0);
+                        gesture.fingers = 2;
+                        gesture.moved = false;
+                        gesture.startCenter = midpoint(primaryTouch, secondTouch);
+                        gesture.lastCenter = gesture.startCenter;
+                    }
+                }
+                return;
+            }
+
+            var canvas = canvasFor(event.target);
+            var touch = event.changedTouches[0];
+            if (!canvas || !touch || event.touches.length !== 1) return;
+
+            stopNativeTouch(event);
+            gesture = {
+                canvas: canvas,
+                identifier: touch.identifier,
+                fingers: 1,
+                moved: false,
+                startCenter: null,
+                lastCenter: null
+            };
+            dispatchMouse(canvas, 'mousedown', touch, 0, 1);
+        }, { capture: true, passive: false });
+
+        document.addEventListener('touchmove', function (event) {
+            if (!gesture) return;
+            stopNativeTouch(event);
+
+            if (gesture.fingers === 1) {
+                var touch = findTouch(event.touches, gesture.identifier);
+                if (touch) dispatchMouse(gesture.canvas, 'mousemove', touch, 0, 1);
+                return;
+            }
+
+            if (event.touches.length < 2) return;
+            var center = midpoint(event.touches[0], event.touches[1]);
+            if (gesture.moved || Math.abs(center.clientY - gesture.startCenter.clientY) > moveThreshold) {
+                gesture.moved = true;
+                gesture.canvas.dispatchEvent(new WheelEvent('wheel', {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: center.clientX,
+                    clientY: center.clientY,
+                    deltaY: (center.clientY - gesture.lastCenter.clientY) * 2
+                }));
+                gesture.lastCenter = center;
+            }
+        }, { capture: true, passive: false });
+
+        document.addEventListener('touchend', function (event) {
+            if (!gesture) return;
+            stopNativeTouch(event);
+
+            if (gesture.fingers === 1) {
+                var touch = findTouch(event.changedTouches, gesture.identifier);
+                if (touch) dispatchMouse(gesture.canvas, 'mouseup', touch, 0, 0);
+            } else if (event.touches.length === 0 && !gesture.moved) {
+                dispatchMouse(gesture.canvas, 'mousedown', gesture.startCenter, 2, 2);
+                dispatchMouse(gesture.canvas, 'mouseup', gesture.startCenter, 2, 0);
+            }
+
+            if (event.touches.length === 0) gesture = null;
+        }, { capture: true, passive: false });
+
+        document.addEventListener('touchcancel', function (event) {
+            if (!gesture) return;
+            stopNativeTouch(event);
+            if (gesture.fingers === 1) {
+                var touch = findTouch(event.changedTouches, gesture.identifier);
+                if (touch) dispatchMouse(gesture.canvas, 'mouseup', touch, 0, 0);
+            }
+            gesture = null;
+        }, { capture: true, passive: false });
+    }
+
+    function installLocalStorageBackup() {
+        if (window.__gdLocalStorageBackupInstalled || !bridge ||
+            typeof bridge.saveGameLocalStorageBackup !== 'function') return;
+
+        window.__gdLocalStorageBackupInstalled = true;
+        var savedSnapshot = window.__gdGameLocalStorageBackup;
+        if (savedSnapshot && localStorage.length === 0) {
+            try {
+                var parsed = JSON.parse(savedSnapshot);
+                if (parsed.version !== 1 || !parsed.entries ||
+                    typeof parsed.entries !== 'object' || Array.isArray(parsed.entries)) {
+                    throw new Error('Unsupported local-storage backup format');
+                }
+                var keys = Object.keys(parsed.entries);
+                for (var i = 0; i < keys.length; i++) {
+                    if (typeof parsed.entries[keys[i]] !== 'string') {
+                        throw new Error('Invalid local-storage backup entry');
+                    }
+                }
+                for (var j = 0; j < keys.length; j++) {
+                    localStorage.setItem(keys[j], parsed.entries[keys[j]]);
+                }
+                console.info(TAG, 'Restored game local storage from Android backup');
+            } catch (e) {
+                console.warn(TAG, 'Could not restore game local storage:', e);
+            }
+        }
+        window.__gdGameLocalStorageBackup = null;
+
+        var saveTimer = null;
+        var maxSnapshotBytes = 8 * 1024 * 1024;
+        function persistSnapshot() {
+            saveTimer = null;
+            try {
+                var entries = Object.create(null);
+                for (var index = 0; index < localStorage.length; index++) {
+                    var key = localStorage.key(index);
+                    if (key !== null) entries[key] = localStorage.getItem(key);
+                }
+                var snapshot = JSON.stringify({ version: 1, entries: entries });
+                if (new TextEncoder().encode(snapshot).byteLength > maxSnapshotBytes) {
+                    console.warn(TAG, 'Game local-storage snapshot exceeds the Android backup size limit');
+                    return;
+                }
+                if (!bridge.saveGameLocalStorageBackup(snapshot)) {
+                    console.warn(TAG, 'Android could not store the game local-storage snapshot');
+                }
+            } catch (e) {
+                console.warn(TAG, 'Could not save game local storage for Android backup:', e);
+            }
+        }
+
+        function scheduleSnapshot() {
+            if (saveTimer !== null) window.clearTimeout(saveTimer);
+            saveTimer = window.setTimeout(persistSnapshot, 1000);
+        }
+
+        var storage = window.Storage && Storage.prototype;
+        if (storage) {
+            var originalSetItem = storage.setItem;
+            var originalRemoveItem = storage.removeItem;
+            var originalClear = storage.clear;
+            storage.setItem = function () {
+                var result = originalSetItem.apply(this, arguments);
+                if (this === localStorage) scheduleSnapshot();
+                return result;
+            };
+            storage.removeItem = function () {
+                var result = originalRemoveItem.apply(this, arguments);
+                if (this === localStorage) scheduleSnapshot();
+                return result;
+            };
+            storage.clear = function () {
+                var result = originalClear.apply(this, arguments);
+                if (this === localStorage) scheduleSnapshot();
+                return result;
+            };
+        }
+
+        window.__gdPersistGameLocalStorageBackup = persistSnapshot;
+        window.setInterval(persistSnapshot, 30000);
+        window.addEventListener('pagehide', persistSnapshot);
+        document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'hidden') persistSnapshot();
+        });
+        scheduleSnapshot();
+    }
 
     // 分块编码，避免大文件在参数展开时导致栈溢出
     function bytesToBase64(bytes) {

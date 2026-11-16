@@ -4,10 +4,12 @@ An unofficial Android port of the web version of **Plants vs. Zombies 2: Gardend
 
 ## Features
 
-- Material Design 3 launcher with portrait and landscape layouts.
+- Material 3 Expressive launcher with portrait and landscape layouts.
 - Runs the game in landscape orientation.
+- Optional auto-launch from launcher settings; use the in-game Home button to return to the launcher.
 - Imports saves using the system file picker.
-- Touch controls: one-finger touch acts as the left mouse button, two-finger touch scrolls, and simultaneous two-finger touch acts as the right mouse button.
+- Supports Android Auto Backup for game WebView storage and launcher preferences.
+- Maps one-finger taps and drags to game mouse input; two-finger swipes scroll and two-finger taps send a right-click.
 - Supports GP-Next and local storage for its data.
 
 ## Installing the game
@@ -19,6 +21,12 @@ An unofficial Android port of the web version of **Plants vs. Zombies 2: Gardend
 The archive must contain `index.html` and the game resources. For example, `index.html` can be in the archive root or in `docs/index.html`. Installed files are preserved between app launches.
 
 To update, select **"Update game ZIP"** and choose the new archive.
+
+## Android cloud backup
+
+When Android backup is enabled for the device, the launcher periodically saves the game's WebView local storage into app data. Android Auto Backup can upload that snapshot and launcher preferences to the user's Google account and restore them during device setup or app reinstall.
+
+The installed game files and GP-Next files are not included. Reinstall the app, restore Android's app backup, then import the game ZIP again. Android backup is subject to the system's per-app 25 MB quota and backup schedule; it is not an immediate, continuous sync.
 
 ## Preparing a ZIP from the Docker image
 

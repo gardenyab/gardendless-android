@@ -31,7 +31,10 @@ import android.util.Base64
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
@@ -39,6 +42,7 @@ import android.webkit.*
 import android.webkit.WebChromeClient.CustomViewCallback
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -61,6 +65,7 @@ import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.textview.MaterialTextView
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -79,6 +84,7 @@ class GameActivity : AppCompatActivity() {
     private lateinit var aspectContainer: AspectRatioFrameLayout
 
     private val prefs by lazy { getSharedPreferences("app_data", MODE_PRIVATE) }
+    private val gameLocalStorageBackup by lazy { GameLocalStorageBackupStore(filesDir) }
 
     /**
      * gp-next 数据目录，对应 Tauri 的 AppData 根。
@@ -101,7 +107,22 @@ class GameActivity : AppCompatActivity() {
             Log.e(TAG, "无法读取 $SHIM_ASSET，gp-next 的数据包与 JS 模组将不可用", e)
             ""
         }
-        if (js.isEmpty()) js else "window.__gdForceJsModding=$FORCE_JS_MODDING;\n$js"
+        if (js.isEmpty()) return@lazy ""
+        val savedStorage = try {
+            gameLocalStorageBackup.read()
+        } catch (e: IOException) {
+            Log.e(TAG, "Unable to read the game local-storage backup", e)
+            null
+        }
+        buildString {
+            if (savedStorage != null) {
+                append("window.__gdGameLocalStorageBackup=")
+                append(JSONObject.quote(savedStorage))
+                append(";\n")
+            }
+            append("window.__gdForceJsModding=$FORCE_JS_MODDING;\n")
+            append(js)
+        }
     }
 
     private val FILE_CHOOSER_RESULT_CODE = 101
@@ -137,10 +158,12 @@ class GameActivity : AppCompatActivity() {
 
     private companion object {
         const val PREF_FULLSCREEN = "webview_fullscreen"
+        const val PREF_AUTO_LAUNCH_GAME = "auto_launch_game"
         const val TAG = "Gardendless"
         const val SHIM_ASSET = "gdnext-shim.js"
         const val GP_NEXT_DIR_NAME = "gp-next"
         const val TELEGRAM_CHANNEL_URL = "https://t.me/pvz2gardendless"
+        const val MENU_SETTINGS_ID = 1
 
         /**
          * 是否在启动时自动启用 gp-next 的 JS Modding 开关。
@@ -157,7 +180,10 @@ class GameActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         DynamicColors.applyToActivityIfAvailable(this)
-        showGameMenu()
+        val shouldAutoLaunch = savedInstanceState == null &&
+            prefs.getBoolean(PREF_AUTO_LAUNCH_GAME, false) &&
+            GameArchiveInstaller(filesDir).installedSiteDirectory() != null
+        if (shouldAutoLaunch) launchGame() else showGameMenu()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -172,9 +198,24 @@ class GameActivity : AppCompatActivity() {
         }
         isLauncherVisible = false
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        setGameRefreshRate(true)
         setupFullScreen()
         setupWebview()
     }
+
+    private fun setGameRefreshRate(enabled: Boolean) {
+        val rate = if (enabled) maxSupportedRefreshRate() else 0f
+        window.attributes = window.attributes.apply {
+            preferredRefreshRate = rate
+        }
+        if (enabled && rate > 0f) {
+            Log.i(TAG, "Requested game display refresh rate: $rate Hz")
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun maxSupportedRefreshRate(): Float =
+        windowManager.defaultDisplay.supportedModes.maxOfOrNull { it.refreshRate } ?: 0f
 
     /** 装配 WebView、AssetLoader、JS 桥与各回调，并加载已导入的游戏 */
     private fun setupWebview() {
@@ -199,27 +240,14 @@ class GameActivity : AppCompatActivity() {
                     ).apply { gravity = android.view.Gravity.CENTER }
                 )
                 addView(
-                    MaterialButton(this@GameActivity).apply {
-                        text = getString(R.string.gp_next)
-                        icon = androidx.appcompat.content.res.AppCompatResources.getDrawable(
-                            this@GameActivity,
-                            R.drawable.ic_tune
-                        )
-                        iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
-                        iconPadding = dp(8)
-                        cornerRadius = dp(20)
-                        insetTop = 0
-                        insetBottom = 0
-                        minHeight = dp(44)
-                        contentDescription = getString(R.string.gp_next_button_description)
-                        setOnClickListener { toggleGpNextMenu() }
-                    },
+                    createGameControls(),
                     android.widget.FrameLayout.LayoutParams(
                         android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
-                        dp(44),
-                        android.view.Gravity.END or android.view.Gravity.CENTER_VERTICAL
+                        android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                        android.view.Gravity.END or android.view.Gravity.TOP
                     ).apply {
-                        marginEnd = dp(8)
+                        topMargin = dp(12)
+                        marginEnd = dp(12)
                     }
                 )
             }
@@ -260,6 +288,10 @@ class GameActivity : AppCompatActivity() {
                 allowContentAccess = false
                 mediaPlaybackRequiresUserGesture = false
             }
+            webView.overScrollMode = View.OVER_SCROLL_NEVER
+            webView.isVerticalScrollBarEnabled = false
+            webView.isHorizontalScrollBarEnabled = false
+            webView.setBackgroundColor(Color.BLACK)
 
             // 网页到原生的桥。游戏运行在 Tauri polyfill 之上，其中两件事在 WebView 里会失效：
             // 全屏被实现为空函数；保存文件名使用 prompt 而 WebView 不响应。
@@ -295,6 +327,20 @@ class GameActivity : AppCompatActivity() {
                 @JavascriptInterface
                 fun cancelExportTransfer() {
                     cancelExportTransferNative()
+                }
+
+                @JavascriptInterface
+                fun saveGameLocalStorageBackup(snapshot: String): Boolean {
+                    return try {
+                        val saved = gameLocalStorageBackup.write(snapshot)
+                        if (!saved) {
+                            Log.w(TAG, "Game local-storage snapshot exceeds the Android backup size limit")
+                        }
+                        saved
+                    } catch (e: IOException) {
+                        Log.e(TAG, "Unable to save the game local-storage backup", e)
+                        false
+                    }
                 }
 
                 // ── gp-next 数据目录（Tauri plugin:path / plugin:fs 的落地实现）──
@@ -355,7 +401,6 @@ class GameActivity : AppCompatActivity() {
                     setOf("https://appassets.androidplatform.net")
                 )
             }
-
             webView.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
                 beginSaveExport(url, pendingExportName, contentDisposition, mimeType)
             }
@@ -382,39 +427,12 @@ class GameActivity : AppCompatActivity() {
                         return false
                     }
                 }
-                /**
-                 * 注入 gp-next shim，并在游戏启动后屏蔽 GameCanvas 上的触摸事件
-                 * （触摸手势统一由 MouseGameWebView 转换为鼠标事件处理）。
-                 * 页面每次加载都会重新注入，shim 内部以 __gdHooked 保证幂等。
-                 */
+                /** 注入兼容 shim；游戏触摸输入由 MouseGameWebView 转为鼠标事件。 */
                 override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                     super.onPageStarted(view, url, favicon)
                     if (!shimAtDocumentStart && gpNextShimJs.isNotEmpty()) {
                         view?.evaluateJavascript(gpNextShimJs, null)
                     }
-                    val js = """
-(function() {
-    const target = document.getElementById("GameCanvas");
-    if (!target) return;
-
-    target.addEventListener("touchstart", (e) => {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-    }, { capture: true, passive: false });
-    target.addEventListener("touchmove", (e) => {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-    }, { capture: true, passive: false });
-    target.addEventListener("touchend", (e) => {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-    }, { capture: true, passive: false });
-})();
-                        """.trimIndent()
-                    // 延迟到 GameCanvas 创建完成后再挂载监听
-                    view?.postDelayed({
-                        view.evaluateJavascript(js, null)
-                    }, 8000)
                 }
 
                 override fun onPageCommitVisible(view: WebView?, url: String?) {
@@ -579,15 +597,16 @@ class GameActivity : AppCompatActivity() {
 
     private fun showGameMenu() {
         isLauncherVisible = true
+        setGameRefreshRate(false)
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        WindowCompat.setDecorFitsSystemWindows(window, true)
+        WindowCompat.getInsetsController(window, window.decorView)
+            .show(WindowInsetsCompat.Type.systemBars())
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
 
         val hasGame = GameArchiveInstaller(filesDir).installedSiteDirectory() != null
         val surface = MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurface, Color.BLACK)
-        val cardSurface = MaterialColors.getColor(
-            this,
-            com.google.android.material.R.attr.colorSurfaceContainerLow,
-            surface
-        )
         val onSurface = MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurface, Color.WHITE)
         val onSurfaceVariant = MaterialColors.getColor(
             this,
@@ -604,7 +623,26 @@ class GameActivity : AppCompatActivity() {
             com.google.android.material.R.attr.colorOnSecondaryContainer,
             Color.WHITE
         )
-        val outline = MaterialColors.getColor(this, com.google.android.material.R.attr.colorOutlineVariant, Color.GRAY)
+        val primaryContainer = MaterialColors.getColor(
+            this,
+            com.google.android.material.R.attr.colorPrimaryContainer,
+            surface
+        )
+        val onPrimaryContainer = MaterialColors.getColor(
+            this,
+            com.google.android.material.R.attr.colorOnPrimaryContainer,
+            onSurface
+        )
+        val tertiaryContainer = MaterialColors.getColor(
+            this,
+            com.google.android.material.R.attr.colorTertiaryContainer,
+            secondaryContainer
+        )
+        val onTertiaryContainer = MaterialColors.getColor(
+            this,
+            com.google.android.material.R.attr.colorOnTertiaryContainer,
+            onSecondaryContainer
+        )
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -624,10 +662,25 @@ class GameActivity : AppCompatActivity() {
             setTitleTextColor(onSurface)
             setBackgroundColor(surface)
             elevation = 0f
+            subtitle = getString(R.string.launcher_subtitle)
+            setSubtitleTextColor(onSurfaceVariant)
+            menu.add(Menu.NONE, MENU_SETTINGS_ID, Menu.NONE, R.string.launcher_settings).apply {
+                setIcon(R.drawable.ic_settings)
+                icon?.mutate()?.setTint(onSurfaceVariant)
+                setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+            }
+            setOnMenuItemClickListener { item ->
+                if (item.itemId == MENU_SETTINGS_ID) {
+                    showLauncherSettings()
+                    true
+                } else {
+                    false
+                }
+            }
         }
         root.addView(
             toolbar,
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(64))
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(72))
         )
         val scrollView = ScrollView(this).apply {
             isFillViewport = true
@@ -635,41 +688,42 @@ class GameActivity : AppCompatActivity() {
         }
         val centeredContent = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(24), dp(24), dp(24), dp(24))
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(20), dp(24), dp(20), dp(32))
         }
         val card = MaterialCardView(this).apply {
-            radius = dp(28).toFloat()
-            cardElevation = 0f
-            strokeWidth = dp(1)
-            setStrokeColor(android.content.res.ColorStateList.valueOf(outline))
-            setCardBackgroundColor(cardSurface)
+            radius = dp(36).toFloat()
+            cardElevation = dp(2).toFloat()
+            strokeWidth = 0
+            setCardBackgroundColor(primaryContainer)
         }
         val cardContent = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(24), dp(24), dp(24))
+            setPadding(dp(28), dp(28), dp(28), dp(28))
         }
         val statusChip = Chip(this).apply {
             text = getString(if (hasGame) R.string.game_status_installed else R.string.game_status_missing)
             isCheckable = false
             isClickable = false
-            chipBackgroundColor = android.content.res.ColorStateList.valueOf(secondaryContainer)
-            setTextColor(onSecondaryContainer)
+            chipCornerRadius = dp(16).toFloat()
+            chipBackgroundColor = android.content.res.ColorStateList.valueOf(tertiaryContainer)
+            setTextColor(onTertiaryContainer)
         }
         cardContent.addView(statusChip, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { bottomMargin = dp(16) })
+        ).apply { bottomMargin = dp(24) })
         cardContent.addView(MaterialTextView(this).apply {
             text = getString(if (hasGame) R.string.game_ready_title else R.string.game_setup_title)
-            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_HeadlineMedium)
-            setTextColor(onSurface)
+            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_DisplaySmall)
+            setTextColor(onPrimaryContainer)
         })
         cardContent.addView(MaterialTextView(this).apply {
             text = getString(R.string.game_menu_description)
             setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyLarge)
-            setTextColor(onSurfaceVariant)
-            setPadding(0, dp(8), 0, dp(16))
+            setTextColor(onPrimaryContainer)
+            alpha = 0.82f
+            setPadding(0, dp(12), 0, dp(20))
         })
 
         if (hasGame) {
@@ -705,7 +759,7 @@ class GameActivity : AppCompatActivity() {
         )
 
         card.addView(cardContent)
-        val cardWidth = (resources.displayMetrics.widthPixels - dp(48)).coerceAtMost(dp(640))
+        val cardWidth = (resources.displayMetrics.widthPixels - dp(40)).coerceAtMost(dp(760))
         centeredContent.addView(card, LinearLayout.LayoutParams(cardWidth, LinearLayout.LayoutParams.WRAP_CONTENT))
         scrollView.addView(
             centeredContent,
@@ -723,14 +777,133 @@ class GameActivity : AppCompatActivity() {
         setContentView(root)
         ViewCompat.requestApplyInsets(root)
 
-        val isNightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
-            Configuration.UI_MODE_NIGHT_YES
         window.statusBarColor = surface
         window.navigationBarColor = surface
         WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = !isNightMode
-            isAppearanceLightNavigationBars = !isNightMode
+            isAppearanceLightStatusBars = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK !=
+                Configuration.UI_MODE_NIGHT_YES
+            isAppearanceLightNavigationBars = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK !=
+                Configuration.UI_MODE_NIGHT_YES
         }
+    }
+
+    private fun showLauncherSettings() {
+        val surfaceContainer = MaterialColors.getColor(
+            this,
+            com.google.android.material.R.attr.colorSurfaceContainerLow,
+            MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurface, Color.BLACK)
+        )
+        val onSurface = MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurface, Color.WHITE)
+        val onSurfaceVariant = MaterialColors.getColor(
+            this,
+            com.google.android.material.R.attr.colorOnSurfaceVariant,
+            Color.LTGRAY
+        )
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(20), dp(16), dp(20), dp(16))
+        }
+        val labels = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        labels.addView(MaterialTextView(this).apply {
+            text = getString(R.string.auto_launch_game)
+            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleMedium)
+            setTextColor(onSurface)
+        })
+        labels.addView(MaterialTextView(this).apply {
+            text = getString(R.string.auto_launch_game_summary)
+            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+            setTextColor(onSurfaceVariant)
+            setPadding(0, dp(4), dp(12), 0)
+        })
+        content.addView(labels, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val autoLaunchSwitch = MaterialSwitch(this).apply {
+            isChecked = prefs.getBoolean(PREF_AUTO_LAUNCH_GAME, false)
+            contentDescription = getString(R.string.auto_launch_game)
+            setOnCheckedChangeListener { _, checked ->
+                prefs.edit().putBoolean(PREF_AUTO_LAUNCH_GAME, checked).apply()
+            }
+        }
+        content.addView(autoLaunchSwitch)
+        content.setOnClickListener { autoLaunchSwitch.isChecked = !autoLaunchSwitch.isChecked }
+        val card = MaterialCardView(this).apply {
+            radius = dp(28).toFloat()
+            cardElevation = 0f
+            strokeWidth = 0
+            setCardBackgroundColor(surfaceContainer)
+            addView(content)
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.launcher_settings)
+            .setView(card, dp(12), dp(8), dp(12), dp(4))
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun createGameControls(): View {
+        val controls = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+        }
+        fun addIconButton(iconRes: Int, descriptionRes: Int, onClick: () -> Unit) {
+            val surfaceContainer = MaterialColors.getColor(
+                this,
+                com.google.android.material.R.attr.colorSurfaceContainerHigh,
+                Color.DKGRAY
+            )
+            val onSurface = MaterialColors.getColor(
+                this,
+                com.google.android.material.R.attr.colorOnSurface,
+                Color.WHITE
+            )
+            val rippleColor = MaterialColors.getColor(
+                this,
+                androidx.appcompat.R.attr.colorControlHighlight,
+                onSurface
+            )
+            val button = FrameLayout(this).apply {
+                contentDescription = getString(descriptionRes)
+                isClickable = true
+                isFocusable = true
+                background = android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(rippleColor),
+                    android.graphics.drawable.GradientDrawable().apply {
+                        setColor(surfaceContainer)
+                        cornerRadius = dp(18).toFloat()
+                    },
+                    null
+                )
+                setOnClickListener { onClick() }
+            }
+            button.addView(ImageView(this).apply {
+                setImageResource(iconRes)
+                imageTintList = android.content.res.ColorStateList.valueOf(onSurface)
+                contentDescription = null
+            }, FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER))
+            controls.addView(button, LinearLayout.LayoutParams(dp(48), dp(48)).apply {
+                if (controls.childCount > 0) topMargin = dp(8)
+            })
+        }
+        addIconButton(R.drawable.ic_home, R.string.home_button_description, ::returnToLauncher)
+        addIconButton(R.drawable.ic_tune, R.string.gp_next_button_description, ::toggleGpNextMenu)
+        return controls
+    }
+
+    private fun returnToLauncher() {
+        isLauncherVisible = true
+        fullscreenCallback?.onCustomViewHidden()
+        fullscreenCallback = null
+        if (::aspectContainer.isInitialized) aspectContainer.fullscreen = false
+        if (::webView.isInitialized) {
+            val oldWebView = webView
+            (oldWebView.parent as? ViewGroup)?.removeView(oldWebView)
+            oldWebView.stopLoading()
+            oldWebView.destroy()
+        }
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        showGameMenu()
     }
 
     private fun addMenuButton(

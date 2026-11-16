@@ -41,4 +41,9 @@
     <string name="game_dialog_title">Gardendless</string>
     <string name="gp_next">GP-Next</string>
     <string name="gp_next_button_description">Open GP-Next menu</string>
+    <string name="launcher_subtitle">A little garden on the go</string>
+    <string name="launcher_settings">Settings</string>
+    <string name="auto_launch_game">Auto-launch game</string>
+    <string name="auto_launch_game_summary">Open the installed game when you start Gardendless.</string>
+    <string name="home_button_description">Return to launcher</string>
 </resources>

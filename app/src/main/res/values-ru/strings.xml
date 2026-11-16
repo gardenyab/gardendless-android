@@ -40,4 +40,9 @@
     <string name="game_dialog_title">Gardendless</string>
     <string name="gp_next">GP-Next</string>
     <string name="gp_next_button_description">Открыть меню GP-Next</string>
+    <string name="launcher_subtitle">Сад всегда под рукой</string>
+    <string name="launcher_settings">Настройки</string>
+    <string name="auto_launch_game">Автозапуск игры</string>
+    <string name="auto_launch_game_summary">Открывать установленную игру при запуске Gardendless.</string>
+    <string name="home_button_description">Вернуться в лаунчер</string>
 </resources>

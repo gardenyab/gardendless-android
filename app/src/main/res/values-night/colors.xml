@@ -8,6 +8,10 @@
     <color name="md_on_secondary">#283422</color>
     <color name="md_secondary_container">#3E4A36</color>
     <color name="md_on_secondary_container">#D9E7CB</color>
+    <color name="md_tertiary">#E8C06E</color>
+    <color name="md_on_tertiary">#3F2E00</color>
+    <color name="md_tertiary_container">#5C4300</color>
+    <color name="md_on_tertiary_container">#FFDF94</color>
     <color name="md_surface">#11140E</color>
     <color name="md_on_surface">#E2E4D9</color>
     <color name="md_surface_variant">#41483B</color>
