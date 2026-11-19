@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="100dp"
+    android:height="100dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M83.94,16.06 C89.94,22.06 86.00,38.69 86.00,50.00 C86.00,61.31 89.94,77.94 83.94,83.94 C77.94,89.94 61.31,86.00 50.00,86.00 C38.69,86.00 22.06,89.94 16.06,83.94 C10.06,77.94 14.00,61.31 14.00,50.00 C14.00,38.69 10.06,22.06 16.06,16.06 C22.06,10.06 38.69,14.00 50.00,14.00 C61.31,14.00 77.94,10.06 83.94,16.06 Z" />
+</vector>

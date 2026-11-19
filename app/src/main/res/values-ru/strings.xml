@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Gardendless</string>
+    <string name="app_name">PvZ Gardendless</string>
     <string name="unzipping">Распаковка файлов…</string>
     <string name="export_done">Экспорт завершён</string>
     <string name="export_failed">Не удалось экспортировать файл</string>
-    <string name="documents_root_title">Gardendless</string>
+    <string name="documents_root_title">PvZ Gardendless</string>
     <string name="documents_root_summary">Файлы игры</string>
     <string name="documents_gpnext_root_title">GP-Next</string>
     <string name="documents_gpnext_root_summary">Пакеты данных и JS-моды</string>
@@ -16,8 +16,8 @@
     <string name="yes">Выйти</string>
     <string name="no">Вернуться</string>
     <string name="hint">Внимание</string>
-    <string name="description">Это неофициальный порт. Подробнее: https://github.com/Cateners/gardendless-android</string>
-    <string name="game_menu_description">Архив игры хранится на устройстве. Скачайте ZIP из Telegram и выберите его здесь.</string>
+    <string name="description">Это неофициальный порт. Подробнее: https://github.com/gardenyab/gardendless-android</string>
+    <string name="game_menu_description">Архив игры хранится на устройстве. Скачайте ZIP из Telegram или GitHub и выберите его здесь.</string>
     <string name="game_ready_title">Игра готова к запуску</string>
     <string name="game_setup_title">Подготовьте игру</string>
     <string name="game_status_installed">ИГРА УСТАНОВЛЕНА</string>
@@ -25,6 +25,22 @@
     <string name="choose_game_zip">Выбрать ZIP игры</string>
     <string name="update_game_zip">Обновить ZIP игры</string>
     <string name="launch_game">Запустить</string>
+    <string name="download_archive">Скачать архив</string>
+    <string name="download_archive_subtitle">Выберите источник для загрузки ZIP игры</string>
+    <string name="download_from_telegram">Из Telegram</string>
+    <string name="download_from_telegram_summary">Самые последние версии выходят раньше всех тут • @pvz2gardendless</string>
+    <string name="download_from_list">Выбрать из списка</string>
+    <string name="download_from_list_summary">Скачать и сразу распаковать игру</string>
+    <string name="download_from_github">Из GitHub (релизы)</string>
+    <string name="download_from_github_summary">Раздел Releases на GitHub</string>
+    <string name="archive_list_title">Список версий</string>
+    <string name="archive_list_subtitle">Выберите версию — лаунчер сам скачает и распакует архив.</string>
+    <string name="archive_list_empty">Список версий пуст.</string>
+    <string name="archive_list_load_failed">Не удалось загрузить список версий с GitHub.</string>
+    <string name="retry">Повторить</string>
+    <string name="downloading_game">Загрузка игры</string>
+    <string name="downloading_progress">Скачивание… %1$d%% (%2$s / %3$s)</string>
+    <string name="downloading_progress_unknown">Скачивание… %1$s</string>
     <string name="download_zip_from_telegram">Скачать ZIP из Telegram</string>
     <string name="zip_picker_unavailable">Не удалось открыть выбор файлов</string>
     <string name="installing_game">Установка игры</string>
@@ -37,12 +53,72 @@
     <string name="update_warning_title">Обновить игру?</string>
     <string name="update_warning_message">После обновления сохранения могут стать несовместимыми или потеряться. Перед продолжением экспортируйте их.</string>
     <string name="continue_update">Продолжить</string>
-    <string name="game_dialog_title">Gardendless</string>
+    <string name="game_dialog_title">PvZ Gardendless</string>
     <string name="gp_next">GP-Next</string>
     <string name="gp_next_button_description">Открыть меню GP-Next</string>
     <string name="launcher_subtitle">Сад всегда под рукой</string>
     <string name="launcher_settings">Настройки</string>
+    <string name="nav_play">Игра</string>
+    <string name="nav_settings">Настройки</string>
     <string name="auto_launch_game">Автозапуск игры</string>
-    <string name="auto_launch_game_summary">Открывать установленную игру при запуске Gardendless.</string>
+    <string name="auto_launch_game_summary">Открывать установленную игру при запуске PvZ Gardendless.</string>
     <string name="home_button_description">Вернуться в лаунчер</string>
+
+    <!-- In-game overlay -->
+    <string name="side_bars_title">Полосы по бокам</string>
+    <string name="side_bars_summary">Что показывать вместо чёрных полос вокруг игрового экрана.</string>
+    <string name="side_mode_off">Чёрные</string>
+    <string name="side_mode_sprite">Газон</string>
+    <string name="side_mode_ambient">Эмбиент</string>
+    <string name="ambient_inset_title">Отступ от края</string>
+    <string name="ambient_inset_summary">На сколько отступить внутрь игрового экрана при выборке цветов у края. Увеличьте, если в подсветке видна рамка.</string>
+    <string name="ambient_inset_value">%1$d dp</string>
+    <string name="ambient_waves_title">Эмбиентные волны</string>
+    <string name="ambient_waves_summary">Пульсирующие волны в цвет границ экрана, реагирующие на звук игры.</string>
+    <string name="shortcuts_title">Быстрые клавиши</string>
+    <string name="shortcuts_summary">Кнопки под иконкой GP-Next отправляют выбранную клавишу в игру.</string>
+    <string name="shortcut_add">Добавить клавишу</string>
+    <string name="shortcut_pick_hint">Нажмите клавишу на клавиатуре, чтобы добавить её. Уже добавленные выделены серым.</string>
+    <string name="shortcut_duplicate">Эта клавиша уже добавлена</string>
+    <string name="shortcut_limit">Можно добавить не больше %1$d клавиш</string>
+    <string name="shortcut_remove">Удалить %1$s</string>
+    <string name="shortcut_send">Отправить %1$s в игру</string>
+    <string name="shortcut_empty">Пока нет ни одной клавиши.</string>
+
+    <!-- Launcher Updates -->
+    <string name="launcher_updates_title">Обновления лаунчера</string>
+    <string name="launcher_current_version">Текущая версия: v%1$s</string>
+    <string name="check_updates">Проверить обновления</string>
+    <string name="checking_updates">Проверяем GitHub…</string>
+    <string name="update_available_status">Доступна версия: v%1$s</string>
+    <string name="update_up_to_date">Установлена последняя версия</string>
+    <string name="update_check_failed">Не удалось проверить обновления</string>
+    <string name="update_dialog_title">Доступно обновление</string>
+    <string name="update_dialog_message">На GitHub вышла версия PvZ Gardendless v%1$s (сейчас установлена v%2$s).</string>
+    <string name="update_download">Скачать</string>
+    <string name="update_download_version">Скачать v%1$s</string>
+    <string name="update_later">Позже</string>
+    <string name="update_open_failed">Не удалось открыть страницу релиза</string>
+
+    <!-- WebView Settings -->
+    <string name="webview_settings_title">Настройки WebView</string>
+    <string name="webview_settings_summary">Производительность, экран, JS-моды и кэш</string>
+    <string name="webview_section_performance">Производительность и экран</string>
+    <string name="webview_section_engine">Движок и моды</string>
+    <string name="webview_high_refresh_title">Максимальная герцовка</string>
+    <string name="webview_high_refresh_summary">Использовать максимальную частоту экрана (90/120 Гц) в игре. Отключите для экономии заряда.</string>
+    <string name="webview_fullscreen_title">Во весь экран</string>
+    <string name="webview_fullscreen_summary">Растягивать игру на весь экран вместо соотношения 16:10–17:9.</string>
+    <string name="webview_keep_screen_on_title">Не выключать экран</string>
+    <string name="webview_keep_screen_on_summary">Не давать экрану гаснуть во время игры.</string>
+    <string name="webview_hw_accel_title">Аппаратное ускорение GPU</string>
+    <string name="webview_hw_accel_summary">Аппаратный слой WebView для плавного WebGL. Отключайте только при артефактах графики.</string>
+    <string name="webview_js_modding_title">Авто-включение JS-модов</string>
+    <string name="webview_js_modding_summary">Автоматически включать JS Modding в GP-Next при запуске игры.</string>
+    <string name="webview_debugging_title">Отладка WebView</string>
+    <string name="webview_debugging_summary">Разрешить инспектирование WebView через chrome://inspect по USB.</string>
+    <string name="webview_clear_cache_title">Очистить кэш WebView</string>
+    <string name="webview_clear_cache_summary">Удаляет кэш веб-ресурсов после обновлений. Сохранения игры не затрагиваются.</string>
+    <string name="webview_cache_cleared">Кэш WebView очищен</string>
+    <string name="webview_back_description">Назад к настройкам</string>
 </resources>

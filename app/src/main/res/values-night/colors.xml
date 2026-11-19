@@ -1,21 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="md_primary">#9CD67B</color>
-    <color name="md_on_primary">#1D370A</color>
-    <color name="md_primary_container">#294F12</color>
-    <color name="md_on_primary_container">#B7F397</color>
-    <color name="md_secondary">#BDCCAE</color>
-    <color name="md_on_secondary">#283422</color>
-    <color name="md_secondary_container">#3E4A36</color>
-    <color name="md_on_secondary_container">#D9E7CB</color>
-    <color name="md_tertiary">#E8C06E</color>
-    <color name="md_on_tertiary">#3F2E00</color>
-    <color name="md_tertiary_container">#5C4300</color>
-    <color name="md_on_tertiary_container">#FFDF94</color>
-    <color name="md_surface">#11140E</color>
-    <color name="md_on_surface">#E2E4D9</color>
-    <color name="md_surface_variant">#41483B</color>
-    <color name="md_on_surface_variant">#C4C8BC</color>
-    <color name="md_outline">#899180</color>
-    <color name="md_outline_variant">#41483B</color>
+    <!-- Material 3 Expressive Botanical Garden Dark Palette (fallback when Dynamic Color unavailable) -->
+    <color name="md_primary">#9BD67D</color>
+    <color name="md_on_primary">#133804</color>
+    <color name="md_primary_container">#235011</color>
+    <color name="md_on_primary_container">#B6F397</color>
+    <color name="md_primary_fixed">#B6F397</color>
+    <color name="md_on_primary_fixed">#092100</color>
+    <color name="md_primary_fixed_dim">#9BD67D</color>
+
+    <color name="md_secondary">#BBCCAE</color>
+    <color name="md_on_secondary">#26341F</color>
+    <color name="md_secondary_container">#3C4B34</color>
+    <color name="md_on_secondary_container">#D7E8C9</color>
+
+    <color name="md_tertiary">#F5BE62</color>
+    <color name="md_on_tertiary">#442C00</color>
+    <color name="md_tertiary_container">#614000</color>
+    <color name="md_on_tertiary_container">#FFDDAE</color>
+
+    <color name="md_surface">#10150E</color>
+    <color name="md_surface_dim">#10150E</color>
+    <color name="md_surface_bright">#363B32</color>
+    <color name="md_surface_container_lowest">#0B0F09</color>
+    <color name="md_surface_container_low">#181D15</color>
+    <color name="md_surface_container">#1C2119</color>
+    <color name="md_surface_container_high">#262C23</color>
+    <color name="md_surface_container_highest">#31362D</color>
+
+    <color name="md_on_surface">#E0E4D9</color>
+    <color name="md_surface_variant">#43493E</color>
+    <color name="md_on_surface_variant">#C3C8BB</color>
+    <color name="md_outline">#8D9386</color>
+    <color name="md_outline_variant">#43493E</color>
 </resources>

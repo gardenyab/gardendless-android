@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Gardendless</string>
+    <string name="app_name">PvZ Gardendless</string>
     <string name="unzipping">解压资源中…</string>
     <string name="export_done">已导出</string>
     <string name="export_failed">导出失败</string>
 
     <!-- Documents Provider -->
-    <string name="documents_root_title">Gardendless</string>
+    <string name="documents_root_title">PvZ Gardendless</string>
     <string name="documents_root_summary">游戏文件</string>
     <string name="documents_gpnext_root_title">GP-Next</string>
     <string name="documents_gpnext_root_summary">数据包与 JS 模组</string>
@@ -18,8 +18,8 @@
     <string name="yes">是的</string>
     <string name="no">点错了</string>
     <string name="hint">提示</string>
-    <string name="description">这不是官方版本。关于此移植的更多信息，见 https://github.com/Cateners/gardendless-android</string>
-    <string name="game_menu_description">选择从 Telegram 频道下载的游戏 ZIP 文件。</string>
+    <string name="description">这不是官方版本。关于此移植的更多信息，见 https://github.com/gardenyab/gardendless-android</string>
+    <string name="game_menu_description">选择从 Telegram 或 GitHub Releases 下载的游戏 ZIP 文件。</string>
     <string name="game_ready_title">游戏已准备就绪</string>
     <string name="game_setup_title">准备游戏</string>
     <string name="game_status_installed">已安装游戏</string>
@@ -27,6 +27,22 @@
     <string name="choose_game_zip">选择游戏 ZIP</string>
     <string name="update_game_zip">更新游戏 ZIP</string>
     <string name="launch_game">启动</string>
+    <string name="download_archive">下载压缩包</string>
+    <string name="download_archive_subtitle">选择游戏 ZIP 压缩包的下载来源</string>
+    <string name="download_from_telegram">Telegram</string>
+    <string name="download_from_telegram_summary">最新版本会最先在这里发布 • @pvz2gardendless</string>
+    <string name="download_from_list">从列表选择</string>
+    <string name="download_from_list_summary">自动下载并解压安装游戏</string>
+    <string name="download_from_github">GitHub Releases</string>
+    <string name="download_from_github_summary">GitHub 发布页</string>
+    <string name="archive_list_title">可选版本列表</string>
+    <string name="archive_list_subtitle">点击任意版本即可自动下载并解压安装。</string>
+    <string name="archive_list_empty">暂无可用版本。</string>
+    <string name="archive_list_load_failed">无法从 GitHub 加载版本列表。</string>
+    <string name="retry">重试</string>
+    <string name="downloading_game">正在下载游戏</string>
+    <string name="downloading_progress">正在下载… %1$d%% (%2$s / %3$s)</string>
+    <string name="downloading_progress_unknown">正在下载… %1$s</string>
     <string name="download_zip_from_telegram">从 Telegram 下载 ZIP</string>
     <string name="zip_picker_unavailable">无法打开文件选择器</string>
     <string name="installing_game">正在安装游戏</string>
@@ -39,12 +55,72 @@
     <string name="update_warning_title">更新游戏？</string>
     <string name="update_warning_message">更新可能导致现有存档不兼容或丢失。继续前请先导出存档。</string>
     <string name="continue_update">继续</string>
-    <string name="game_dialog_title">Gardendless</string>
+    <string name="game_dialog_title">PvZ Gardendless</string>
     <string name="gp_next">GP-Next</string>
     <string name="gp_next_button_description">打开 GP-Next 菜单</string>
     <string name="launcher_subtitle">随身畅玩花园</string>
     <string name="launcher_settings">设置</string>
+    <string name="nav_play">游戏</string>
+    <string name="nav_settings">设置</string>
     <string name="auto_launch_game">自动启动游戏</string>
-    <string name="auto_launch_game_summary">启动 Gardendless 时自动打开已安装的游戏。</string>
+    <string name="auto_launch_game_summary">启动 PvZ Gardendless 时自动打开已安装的游戏。</string>
     <string name="home_button_description">返回启动器</string>
+
+    <!-- In-game overlay -->
+    <string name="side_bars_title">两侧黑边</string>
+    <string name="side_bars_summary">选择用哪种效果替换游戏画面两侧的黑色边框。</string>
+    <string name="side_mode_off">纯黑</string>
+    <string name="side_mode_sprite">草坪</string>
+    <string name="side_mode_ambient">氛围</string>
+    <string name="ambient_inset_title">边缘内缩</string>
+    <string name="ambient_inset_summary">取色时从游戏画面边缘向内缩进的距离。若光晕里出现边框，请调大该值。</string>
+    <string name="ambient_inset_value">%1$d dp</string>
+    <string name="ambient_waves_title">氛围声波</string>
+    <string name="ambient_waves_summary">随游戏声音脉动扩张的边缘色彩波浪。</string>
+    <string name="shortcuts_title">快捷键</string>
+    <string name="shortcuts_summary">GP-Next 图标下方的按钮会把所选按键发送到游戏。</string>
+    <string name="shortcut_add">添加按键</string>
+    <string name="shortcut_pick_hint">点按键盘上的按键即可添加，已添加的按键会变灰。</string>
+    <string name="shortcut_duplicate">该按键已添加</string>
+    <string name="shortcut_limit">最多只能添加 %1$d 个按键</string>
+    <string name="shortcut_remove">删除 %1$s</string>
+    <string name="shortcut_send">把 %1$s 发送到游戏</string>
+    <string name="shortcut_empty">尚未添加快捷键。</string>
+
+    <!-- Launcher Updates -->
+    <string name="launcher_updates_title">启动器更新</string>
+    <string name="launcher_current_version">当前版本：v%1$s</string>
+    <string name="check_updates">检查更新</string>
+    <string name="checking_updates">正在检查 GitHub…</string>
+    <string name="update_available_status">发现新版本：v%1$s</string>
+    <string name="update_up_to_date">已是最新版本</string>
+    <string name="update_check_failed">无法检查更新</string>
+    <string name="update_dialog_title">发现新版本</string>
+    <string name="update_dialog_message">GitHub 上已有新版本 PvZ Gardendless v%1$s（当前版本：v%2$s）。</string>
+    <string name="update_download">下载</string>
+    <string name="update_download_version">下载 v%1$s</string>
+    <string name="update_later">稍后</string>
+    <string name="update_open_failed">无法打开发布页面</string>
+
+    <!-- WebView Settings -->
+    <string name="webview_settings_title">WebView 设置</string>
+    <string name="webview_settings_summary">性能、显示、JS 模组与缓存</string>
+    <string name="webview_section_performance">性能与显示</string>
+    <string name="webview_section_engine">引擎与模组</string>
+    <string name="webview_high_refresh_title">高刷新率</string>
+    <string name="webview_high_refresh_summary">游戏内启用屏幕最高刷新率（90/120 Hz）。关闭可降低耗电与发热。</string>
+    <string name="webview_fullscreen_title">铺满全屏</string>
+    <string name="webview_fullscreen_summary">将游戏画面铺满整个屏幕，而非保持 16:10–17:9 比例。</string>
+    <string name="webview_keep_screen_on_title">保持屏幕常亮</string>
+    <string name="webview_keep_screen_on_summary">游玩时防止屏幕自动熄灭。</string>
+    <string name="webview_hw_accel_title">GPU 硬件加速</string>
+    <string name="webview_hw_accel_summary">使用硬件渲染层提升 WebGL 流畅度。仅在画面异常时关闭。</string>
+    <string name="webview_js_modding_title">自动启用 JS 模组</string>
+    <string name="webview_js_modding_summary">启动游戏时自动解锁 GP-Next 的 JavaScript 模组功能。</string>
+    <string name="webview_debugging_title">WebView 远程调试</string>
+    <string name="webview_debugging_summary">允许通过 USB 在 chrome://inspect 中调试游戏页面。</string>
+    <string name="webview_clear_cache_title">清除 WebView 缓存</string>
+    <string name="webview_clear_cache_summary">清除网页缓存以解决更新后的异常，不会影响游戏存档。</string>
+    <string name="webview_cache_cleared">已清除 WebView 缓存</string>
+    <string name="webview_back_description">返回设置</string>
 </resources>

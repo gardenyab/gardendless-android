@@ -35,9 +35,36 @@
         };
     }
 
+    // 补齐 Electron 预加载脚本（assets/preload-*.js）提供给游戏的 electronAPI。
+    //
+    // 游戏里的 ElectronAPI 帮助类对多数方法用的是 `api?.method()` 这种可选调用：
+    // 它只能挡住 api 本身为空，挡不住方法不存在——方法缺失会直接抛 TypeError。
+    // 其中 getCurrentResolutionSync 缺失会让 SettingWindow.onLoad 在
+    // getDefaultResolution() 处中断，后面的音量/音效等字段读不到，UI 停在默认值，
+    // 之后任意一次切换又会把默认值整体写回 PvZ2_Settings，看起来就是「设置被重置」。
+    // WebView 没有真实的窗口管理，这里按原实现给出等价的空值（原预加载脚本中
+    // getCurrentResolutionSync 同样返回空串）。
+    var electronApiStubs = {
+        isFullScreen: function () { return false; },
+        getCurrentResolutionSync: function () { return ''; },
+        getAllResolutionsSync: function () { return []; },
+        getMassageSync: function () { return ''; },
+        setSize: function () { },
+        setResolution: function () { },
+        nircmd: function () { },
+        center: function () { },
+        quit: function () { },
+        openDevTools: function () { },
+        closeDevTools: function () { },
+        toggleDevTools: function () { }
+    };
+    Object.keys(electronApiStubs).forEach(function (name) {
+        if (typeof electronApi[name] !== 'function') {
+            electronApi[name] = electronApiStubs[name];
+        }
+    });
+
     installGameDialogWebViewStyles();
-    installGameTouchInput();
-    installLocalStorageBackup();
     if (!bridge || window.__gdHooked) return;
     window.__gdHooked = true;
 
@@ -234,6 +261,9 @@
         var styleId = 'gardendless-game-dialog-webview-style';
         var stylesheetId = 'gardendless-game-dialog-stylesheet';
         var css = [
+            // 页面的 <body> 默认是 #333；游戏画面铺满时透明边缘会透出底色，
+            // 在 WebView 与黑边交界处表现为细亮的竖线，这里统一压成纯黑。
+            'html,body{background-color:#000!important}',
             'dialog.game-dialog[open]{display:flex!important;position:fixed!important;',
             'top:50%!important;left:50%!important;right:auto!important;bottom:auto!important;',
             'transform:translate(-50%,-50%) scale(.46)!important;transform-origin:center center!important;',
@@ -282,226 +312,6 @@
             if (addStyle()) observer.disconnect();
         });
         observer.observe(document, { childList: true, subtree: true });
-    }
-
-    function installGameTouchInput() {
-        if (window.__gdGameTouchInputInstalled) return;
-        window.__gdGameTouchInputInstalled = true;
-
-        var gesture = null;
-        var moveThreshold = 20;
-
-        function canvasFor(target) {
-            if (!target) return null;
-            if (target.id === 'GameCanvas' && target.tagName === 'CANVAS') return target;
-            return target.closest ? target.closest('canvas#GameCanvas') : null;
-        }
-
-        function findTouch(touches, identifier) {
-            for (var i = 0; i < touches.length; i++) {
-                if (touches[i].identifier === identifier) return touches[i];
-            }
-            return null;
-        }
-
-        function midpoint(first, second) {
-            return {
-                clientX: (first.clientX + second.clientX) / 2,
-                clientY: (first.clientY + second.clientY) / 2,
-                screenX: (first.screenX + second.screenX) / 2,
-                screenY: (first.screenY + second.screenY) / 2
-            };
-        }
-
-        function dispatchMouse(canvas, type, point, button, buttons) {
-            canvas.dispatchEvent(new MouseEvent(type, {
-                view: window,
-                bubbles: true,
-                cancelable: true,
-                screenX: point.screenX,
-                screenY: point.screenY,
-                clientX: point.clientX,
-                clientY: point.clientY,
-                button: button,
-                buttons: buttons
-            }));
-        }
-
-        function stopNativeTouch(event) {
-            if (event.cancelable) event.preventDefault();
-            event.stopImmediatePropagation();
-        }
-
-        document.addEventListener('touchstart', function (event) {
-            if (gesture) {
-                stopNativeTouch(event);
-                if (gesture.fingers === 1 && event.touches.length === 2) {
-                    var primaryTouch = findTouch(event.touches, gesture.identifier);
-                    var secondTouch = event.changedTouches[0];
-                    if (primaryTouch && secondTouch) {
-                        dispatchMouse(gesture.canvas, 'mouseup', primaryTouch, 0, 0);
-                        gesture.fingers = 2;
-                        gesture.moved = false;
-                        gesture.startCenter = midpoint(primaryTouch, secondTouch);
-                        gesture.lastCenter = gesture.startCenter;
-                    }
-                }
-                return;
-            }
-
-            var canvas = canvasFor(event.target);
-            var touch = event.changedTouches[0];
-            if (!canvas || !touch || event.touches.length !== 1) return;
-
-            stopNativeTouch(event);
-            gesture = {
-                canvas: canvas,
-                identifier: touch.identifier,
-                fingers: 1,
-                moved: false,
-                startCenter: null,
-                lastCenter: null
-            };
-            dispatchMouse(canvas, 'mousedown', touch, 0, 1);
-        }, { capture: true, passive: false });
-
-        document.addEventListener('touchmove', function (event) {
-            if (!gesture) return;
-            stopNativeTouch(event);
-
-            if (gesture.fingers === 1) {
-                var touch = findTouch(event.touches, gesture.identifier);
-                if (touch) dispatchMouse(gesture.canvas, 'mousemove', touch, 0, 1);
-                return;
-            }
-
-            if (event.touches.length < 2) return;
-            var center = midpoint(event.touches[0], event.touches[1]);
-            if (gesture.moved || Math.abs(center.clientY - gesture.startCenter.clientY) > moveThreshold) {
-                gesture.moved = true;
-                gesture.canvas.dispatchEvent(new WheelEvent('wheel', {
-                    bubbles: true,
-                    cancelable: true,
-                    clientX: center.clientX,
-                    clientY: center.clientY,
-                    deltaY: (center.clientY - gesture.lastCenter.clientY) * 2
-                }));
-                gesture.lastCenter = center;
-            }
-        }, { capture: true, passive: false });
-
-        document.addEventListener('touchend', function (event) {
-            if (!gesture) return;
-            stopNativeTouch(event);
-
-            if (gesture.fingers === 1) {
-                var touch = findTouch(event.changedTouches, gesture.identifier);
-                if (touch) dispatchMouse(gesture.canvas, 'mouseup', touch, 0, 0);
-            } else if (event.touches.length === 0 && !gesture.moved) {
-                dispatchMouse(gesture.canvas, 'mousedown', gesture.startCenter, 2, 2);
-                dispatchMouse(gesture.canvas, 'mouseup', gesture.startCenter, 2, 0);
-            }
-
-            if (event.touches.length === 0) gesture = null;
-        }, { capture: true, passive: false });
-
-        document.addEventListener('touchcancel', function (event) {
-            if (!gesture) return;
-            stopNativeTouch(event);
-            if (gesture.fingers === 1) {
-                var touch = findTouch(event.changedTouches, gesture.identifier);
-                if (touch) dispatchMouse(gesture.canvas, 'mouseup', touch, 0, 0);
-            }
-            gesture = null;
-        }, { capture: true, passive: false });
-    }
-
-    function installLocalStorageBackup() {
-        if (window.__gdLocalStorageBackupInstalled || !bridge ||
-            typeof bridge.saveGameLocalStorageBackup !== 'function') return;
-
-        window.__gdLocalStorageBackupInstalled = true;
-        var savedSnapshot = window.__gdGameLocalStorageBackup;
-        if (savedSnapshot && localStorage.length === 0) {
-            try {
-                var parsed = JSON.parse(savedSnapshot);
-                if (parsed.version !== 1 || !parsed.entries ||
-                    typeof parsed.entries !== 'object' || Array.isArray(parsed.entries)) {
-                    throw new Error('Unsupported local-storage backup format');
-                }
-                var keys = Object.keys(parsed.entries);
-                for (var i = 0; i < keys.length; i++) {
-                    if (typeof parsed.entries[keys[i]] !== 'string') {
-                        throw new Error('Invalid local-storage backup entry');
-                    }
-                }
-                for (var j = 0; j < keys.length; j++) {
-                    localStorage.setItem(keys[j], parsed.entries[keys[j]]);
-                }
-                console.info(TAG, 'Restored game local storage from Android backup');
-            } catch (e) {
-                console.warn(TAG, 'Could not restore game local storage:', e);
-            }
-        }
-        window.__gdGameLocalStorageBackup = null;
-
-        var saveTimer = null;
-        var maxSnapshotBytes = 8 * 1024 * 1024;
-        function persistSnapshot() {
-            saveTimer = null;
-            try {
-                var entries = Object.create(null);
-                for (var index = 0; index < localStorage.length; index++) {
-                    var key = localStorage.key(index);
-                    if (key !== null) entries[key] = localStorage.getItem(key);
-                }
-                var snapshot = JSON.stringify({ version: 1, entries: entries });
-                if (new TextEncoder().encode(snapshot).byteLength > maxSnapshotBytes) {
-                    console.warn(TAG, 'Game local-storage snapshot exceeds the Android backup size limit');
-                    return;
-                }
-                if (!bridge.saveGameLocalStorageBackup(snapshot)) {
-                    console.warn(TAG, 'Android could not store the game local-storage snapshot');
-                }
-            } catch (e) {
-                console.warn(TAG, 'Could not save game local storage for Android backup:', e);
-            }
-        }
-
-        function scheduleSnapshot() {
-            if (saveTimer !== null) window.clearTimeout(saveTimer);
-            saveTimer = window.setTimeout(persistSnapshot, 1000);
-        }
-
-        var storage = window.Storage && Storage.prototype;
-        if (storage) {
-            var originalSetItem = storage.setItem;
-            var originalRemoveItem = storage.removeItem;
-            var originalClear = storage.clear;
-            storage.setItem = function () {
-                var result = originalSetItem.apply(this, arguments);
-                if (this === localStorage) scheduleSnapshot();
-                return result;
-            };
-            storage.removeItem = function () {
-                var result = originalRemoveItem.apply(this, arguments);
-                if (this === localStorage) scheduleSnapshot();
-                return result;
-            };
-            storage.clear = function () {
-                var result = originalClear.apply(this, arguments);
-                if (this === localStorage) scheduleSnapshot();
-                return result;
-            };
-        }
-
-        window.__gdPersistGameLocalStorageBackup = persistSnapshot;
-        window.setInterval(persistSnapshot, 30000);
-        window.addEventListener('pagehide', persistSnapshot);
-        document.addEventListener('visibilitychange', function () {
-            if (document.visibilityState === 'hidden') persistSnapshot();
-        });
-        scheduleSnapshot();
     }
 
     // 分块编码，避免大文件在参数展开时导致栈溢出
@@ -730,4 +540,173 @@
             }, 100);
         }
     }
+
+    // ── Ambient Audio Waves (Web Audio + HTMLAudio Analyser tap, zero permissions) ──
+    (function installAmbientAudioTap() {
+        if (!bridge || typeof bridge.setAmbientAudioSpectrum !== 'function') return;
+        var AudioNodeCtor = window.AudioNode;
+        var AudioCtxCtor = window.AudioContext || window.webkitAudioContext;
+
+        var analysers = [];
+        var origConnect = AudioNodeCtor && AudioNodeCtor.prototype && AudioNodeCtor.prototype.connect;
+        var mediaCtx = null;
+
+        function ensureAnalyser(ctx) {
+            if (!ctx || typeof ctx.createAnalyser !== 'function') return null;
+            if (ctx.__gdAmbientAnalyser) return ctx.__gdAmbientAnalyser;
+            try {
+                var analyser = ctx.createAnalyser();
+                analyser.fftSize = 256;
+                analyser.minDecibels = -64;
+                analyser.maxDecibels = -8;
+                analyser.smoothingTimeConstant = 0.55;
+                var silentGain = ctx.createGain();
+                silentGain.gain.value = 0;
+                if (origConnect) {
+                    origConnect.call(analyser, silentGain);
+                    origConnect.call(silentGain, ctx.destination);
+                } else {
+                    analyser.connect(silentGain);
+                    silentGain.connect(ctx.destination);
+                }
+                ctx.__gdAmbientAnalyser = analyser;
+                analysers.push({
+                    ctx: ctx,
+                    analyser: analyser,
+                    freqBins: new Uint8Array(analyser.frequencyBinCount),
+                    timeBins: new Uint8Array(analyser.fftSize)
+                });
+                return analyser;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        // 1. Hook Web Audio API (SFX & WebAudio BGM)
+        if (origConnect) {
+            AudioNodeCtor.prototype.connect = function (dest) {
+                var result = origConnect.apply(this, arguments);
+                try {
+                    if (dest && this && this.context &&
+                        dest === this.context.destination &&
+                        this !== this.context.__gdAmbientAnalyser) {
+                        var analyser = ensureAnalyser(this.context);
+                        if (analyser) {
+                            origConnect.call(this, analyser);
+                        }
+                    }
+                } catch (e) {
+                    /* keep game audio untouched */
+                }
+                return result;
+            };
+        }
+
+        // 2. Hook DOM <audio> elements (Cocos DOM_AUDIO BGM tracks)
+        if (AudioCtxCtor && window.HTMLMediaElement && HTMLMediaElement.prototype &&
+            typeof HTMLMediaElement.prototype.play === 'function') {
+            var origPlay = HTMLMediaElement.prototype.play;
+            HTMLMediaElement.prototype.play = function () {
+                try {
+                    if (this && this.tagName === 'AUDIO' && !this.__gdAudioTapped) {
+                        var src = this.currentSrc || this.src || '';
+                        if (!src || src.indexOf(ORIGIN) === 0 || src.indexOf('blob:') === 0) {
+                            this.__gdAudioTapped = true;
+                            if (!mediaCtx) mediaCtx = new AudioCtxCtor();
+                            if (mediaCtx.state === 'suspended') {
+                                mediaCtx.resume().catch(function () { });
+                            }
+                            var source = mediaCtx.createMediaElementSource(this);
+                            var analyser = ensureAnalyser(mediaCtx);
+                            if (origConnect) {
+                                origConnect.call(source, mediaCtx.destination);
+                                if (analyser) origConnect.call(source, analyser);
+                            } else {
+                                source.connect(mediaCtx.destination);
+                                if (analyser) source.connect(analyser);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    /* ignore if element already bound or unsupported */
+                }
+                return origPlay.apply(this, arguments);
+            };
+        }
+
+        var lastSentAt = 0;
+        var lastNonZero = false;
+        var slowRms = 0;
+
+        function avgSlice(arr, start, end) {
+            var e = Math.min(end, arr.length);
+            if (e <= start) return 0;
+            var sum = 0;
+            for (var i = start; i < e; i++) sum += arr[i];
+            return sum / ((e - start) * 255);
+        }
+
+        function tick(now) {
+            requestAnimationFrame(tick);
+            if (!window.__gdAmbientWavesEnabled) return;
+            if (now - lastSentAt < 16) return;
+            lastSentAt = now;
+
+            var maxRms = 0;
+            var maxBass = 0;
+            var maxMid = 0;
+            var maxHigh = 0;
+
+            for (var i = 0; i < analysers.length; i++) {
+                var entry = analysers[i];
+                if (!entry.ctx || entry.ctx.state !== 'running') continue;
+                try {
+                    entry.analyser.getByteTimeDomainData(entry.timeBins);
+                    var tb = entry.timeBins;
+                    var sqSum = 0;
+                    for (var s = 0; s < tb.length; s++) {
+                        var centered = (tb[s] - 128) / 128;
+                        sqSum += centered * centered;
+                    }
+                    var rms = Math.sqrt(sqSum / tb.length);
+                    if (rms > maxRms) maxRms = rms;
+
+                    if (rms > 0.002) {
+                        entry.analyser.getByteFrequencyData(entry.freqBins);
+                        var b = avgSlice(entry.freqBins, 1, 9);
+                        var m = avgSlice(entry.freqBins, 9, 28);
+                        var h = avgSlice(entry.freqBins, 28, 64);
+                        if (b > maxBass) maxBass = b;
+                        if (m > maxMid) maxMid = m;
+                        if (h > maxHigh) maxHigh = h;
+                    }
+                } catch (e) { /* ignore */ }
+            }
+
+            // Smooth noise gate + adaptive transient punch so silence is truly 0 and beats pop
+            var gate = Math.max(0, Math.min(1, (maxRms - 0.0025) / 0.014));
+            slowRms = slowRms * 0.92 + maxRms * 0.08;
+            var punch = Math.max(0, Math.min(1, (maxRms - slowRms * 0.72) * 5.5));
+            var baseLoudness = Math.max(0, Math.min(1, Math.pow(maxRms * 3.8, 0.78)));
+
+            var outLevel = gate * Math.min(1, baseLoudness * 0.65 + punch * 0.55);
+            var outBass = gate * Math.min(1, Math.pow(maxBass, 0.85) * 0.7 + punch * 0.6);
+            var outMid = gate * Math.min(1, Math.pow(maxMid, 0.85) * 0.75 + baseLoudness * 0.35);
+            var outHigh = gate * Math.min(1, Math.pow(maxHigh, 0.85) * 0.8 + punch * 0.25);
+
+            var active = outLevel > 0.004 || outBass > 0.004 || outMid > 0.004 || outHigh > 0.004;
+            if (active || lastNonZero) {
+                lastNonZero = active;
+                try {
+                    bridge.setAmbientAudioSpectrum(
+                        active ? outLevel : 0,
+                        active ? outBass : 0,
+                        active ? outMid : 0,
+                        active ? outHigh : 0
+                    );
+                } catch (e) { /* ignore */ }
+            }
+        }
+        requestAnimationFrame(tick);
+    })();
 })();

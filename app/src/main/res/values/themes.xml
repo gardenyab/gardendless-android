@@ -1,25 +1,223 @@
-<resources>
-    <style name="Theme.Gardendless" parent="Theme.Material3.DayNight.NoActionBar">
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <style name="Base.Theme.Gardendless" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">@color/md_primary</item>
         <item name="colorOnPrimary">@color/md_on_primary</item>
         <item name="colorPrimaryContainer">@color/md_primary_container</item>
         <item name="colorOnPrimaryContainer">@color/md_on_primary_container</item>
+        <item name="colorPrimaryFixed">@color/md_primary_fixed</item>
+        <item name="colorPrimaryFixedDim">@color/md_primary_fixed_dim</item>
+
         <item name="colorSecondary">@color/md_secondary</item>
         <item name="colorOnSecondary">@color/md_on_secondary</item>
         <item name="colorSecondaryContainer">@color/md_secondary_container</item>
         <item name="colorOnSecondaryContainer">@color/md_on_secondary_container</item>
+
         <item name="colorTertiary">@color/md_tertiary</item>
         <item name="colorOnTertiary">@color/md_on_tertiary</item>
         <item name="colorTertiaryContainer">@color/md_tertiary_container</item>
         <item name="colorOnTertiaryContainer">@color/md_on_tertiary_container</item>
+
         <item name="colorSurface">@color/md_surface</item>
+        <item name="colorSurfaceDim">@color/md_surface_dim</item>
+        <item name="colorSurfaceBright">@color/md_surface_bright</item>
+        <item name="colorSurfaceContainerLowest">@color/md_surface_container_lowest</item>
+        <item name="colorSurfaceContainerLow">@color/md_surface_container_low</item>
+        <item name="colorSurfaceContainer">@color/md_surface_container</item>
+        <item name="colorSurfaceContainerHigh">@color/md_surface_container_high</item>
+        <item name="colorSurfaceContainerHighest">@color/md_surface_container_highest</item>
+
         <item name="colorOnSurface">@color/md_on_surface</item>
         <item name="colorSurfaceVariant">@color/md_surface_variant</item>
         <item name="colorOnSurfaceVariant">@color/md_on_surface_variant</item>
         <item name="colorOutline">@color/md_outline</item>
         <item name="colorOutlineVariant">@color/md_outline_variant</item>
-        <item name="android:colorBackground">@color/md_surface</item>
-        <item name="android:statusBarColor">@color/md_surface</item>
-        <item name="android:navigationBarColor">@color/md_surface</item>
+        <item name="android:colorBackground">@color/md_surface_container</item>
+        <item name="android:windowBackground">@color/md_surface_container</item>
+
+        <!-- Edge-to-edge transparent system bars -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:enforceNavigationBarContrast" tools:targetApi="29">false</item>
+
+        <!-- Material 3 Expressive Spring Motion Scheme -->
+        <item name="motionSpringDefaultSpatial">@style/Motion.Gardendless.Spring.Expressive.Default.Spatial</item>
+        <item name="motionSpringFastSpatial">@style/Motion.Gardendless.Spring.Expressive.Fast.Spatial</item>
+        <item name="motionSpringSlowSpatial">@style/Motion.Gardendless.Spring.Expressive.Slow.Spatial</item>
+        <item name="motionSpringDefaultEffects">@style/Motion.Gardendless.Spring.Expressive.Default.Effects</item>
+        <item name="motionSpringFastEffects">@style/Motion.Gardendless.Spring.Expressive.Fast.Effects</item>
+        <item name="motionSpringSlowEffects">@style/Motion.Gardendless.Spring.Expressive.Slow.Effects</item>
+
+        <!-- Expressive Dialogs & Bottom Sheets -->
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.Gardendless.MaterialAlertDialog</item>
+        <item name="bottomSheetDialogTheme">@style/ThemeOverlay.Gardendless.BottomSheetDialog</item>
     </style>
+
+    <style name="Theme.Gardendless" parent="Base.Theme.Gardendless">
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+
+    <!-- Official Material 3 Expressive Spring Physics Tokens -->
+    <style name="Motion.Gardendless.Spring.Expressive.Default.Spatial" parent="">
+        <item name="damping">0.8</item>
+        <item name="stiffness">380</item>
+    </style>
+
+    <style name="Motion.Gardendless.Spring.Expressive.Fast.Spatial" parent="">
+        <item name="damping">0.6</item>
+        <item name="stiffness">800</item>
+    </style>
+
+    <style name="Motion.Gardendless.Spring.Expressive.Slow.Spatial" parent="">
+        <item name="damping">0.8</item>
+        <item name="stiffness">200</item>
+    </style>
+
+    <style name="Motion.Gardendless.Spring.Expressive.Default.Effects" parent="">
+        <item name="damping">1.0</item>
+        <item name="stiffness">1600</item>
+    </style>
+
+    <style name="Motion.Gardendless.Spring.Expressive.Fast.Effects" parent="">
+        <item name="damping">1.0</item>
+        <item name="stiffness">3800</item>
+    </style>
+
+    <style name="Motion.Gardendless.Spring.Expressive.Slow.Effects" parent="">
+        <item name="damping">1.0</item>
+        <item name="stiffness">800</item>
+    </style>
+
+    <!-- Expressive Dialog Overlay -->
+    <style name="ThemeOverlay.Gardendless.MaterialAlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="alertDialogStyle">@style/MaterialAlertDialog.Gardendless</item>
+        <item name="materialAlertDialogTitleTextStyle">@style/MaterialAlertDialog.Gardendless.Title.Text</item>
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.Gardendless.Button.DialogPositive</item>
+        <item name="buttonBarNegativeButtonStyle">@style/Widget.Gardendless.Button.DialogNegative</item>
+    </style>
+
+    <style name="MaterialAlertDialog.Gardendless" parent="MaterialAlertDialog.Material3">
+        <item name="shapeAppearance">@style/ShapeAppearance.Material3.Corner.ExtraLargeIncreased</item>
+        <item name="backgroundTint">?attr/colorSurfaceContainerHigh</item>
+    </style>
+
+    <style name="MaterialAlertDialog.Gardendless.Title.Text" parent="MaterialAlertDialog.Material3.Title.Text">
+        <item name="android:textAppearance">@style/TextAppearance.Material3.HeadlineSmall.Emphasized</item>
+    </style>
+
+    <style name="Widget.Gardendless.Button.DialogPositive" parent="Widget.Material3.Button.TextButton.Dialog">
+        <item name="android:textAppearance">@style/TextAppearance.Material3.LabelLarge.Emphasized</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.Material3.Corner.Full</item>
+    </style>
+
+    <style name="Widget.Gardendless.Button.DialogNegative" parent="Widget.Material3.Button.TextButton.Dialog">
+        <item name="android:textAppearance">@style/TextAppearance.Material3.LabelLarge.Emphasized</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.Material3.Corner.Full</item>
+    </style>
+
+    <!-- Expressive Modal Bottom Sheet Overlay -->
+    <style name="ThemeOverlay.Gardendless.BottomSheetDialog" parent="ThemeOverlay.Material3.DayNight.BottomSheetDialog">
+        <item name="bottomSheetStyle">@style/Widget.Gardendless.BottomSheet.Modal</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:enforceNavigationBarContrast" tools:targetApi="29">false</item>
+    </style>
+
+    <style name="Widget.Gardendless.BottomSheet.Modal" parent="Widget.Material3.BottomSheet.Modal">
+        <item name="shapeAppearanceOverlay">@style/ShapeAppearanceOverlay.Gardendless.BottomSheet</item>
+        <item name="backgroundTint">?attr/colorSurfaceContainerLow</item>
+    </style>
+
+    <style name="ShapeAppearanceOverlay.Gardendless.BottomSheet" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSizeTopLeft">32dp</item>
+        <item name="cornerSizeTopRight">32dp</item>
+        <item name="cornerSizeBottomLeft">0dp</item>
+        <item name="cornerSizeBottomRight">0dp</item>
+    </style>
+
+    <!-- Expressive Segmented Group Card Shapes (Android 16 M3 Expressive Geometry) -->
+    <style name="ShapeAppearance.Gardendless.HeroCard" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">36dp</item>
+    </style>
+
+    <style name="ShapeAppearance.Gardendless.SegmentedTop" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSizeTopLeft">28dp</item>
+        <item name="cornerSizeTopRight">28dp</item>
+        <item name="cornerSizeBottomLeft">6dp</item>
+        <item name="cornerSizeBottomRight">6dp</item>
+    </style>
+
+    <style name="ShapeAppearance.Gardendless.SegmentedMiddle" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">6dp</item>
+    </style>
+
+    <style name="ShapeAppearance.Gardendless.SegmentedBottom" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSizeTopLeft">6dp</item>
+        <item name="cornerSizeTopRight">6dp</item>
+        <item name="cornerSizeBottomLeft">28dp</item>
+        <item name="cornerSizeBottomRight">28dp</item>
+    </style>
+
+    <!-- Expressive Button Styles (Guaranteed Full Pill / Circle + Spring Corner Morphing via ExpressiveMotion) -->
+    <style name="Widget.Gardendless.Button.Hero" parent="Widget.Material3.Button">
+        <item name="android:minHeight">64dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:paddingStart">24dp</item>
+        <item name="android:paddingEnd">24dp</item>
+        <item name="android:textAppearance">@style/TextAppearance.Material3.TitleMedium.Emphasized</item>
+        <item name="iconSize">26dp</item>
+        <item name="iconPadding">12dp</item>
+        <item name="iconGravity">textStart</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.Material3.Corner.Full</item>
+        <item name="opticalCenterEnabled">true</item>
+    </style>
+
+    <style name="Widget.Gardendless.Button.ActionTonal" parent="Widget.Material3.Button.TonalButton">
+        <item name="android:minHeight">58dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">16dp</item>
+        <item name="android:paddingTop">10dp</item>
+        <item name="android:paddingBottom">10dp</item>
+        <item name="android:textAppearance">@style/TextAppearance.Material3.LabelLarge.Emphasized</item>
+        <item name="iconSize">20dp</item>
+        <item name="iconPadding">8dp</item>
+        <item name="iconGravity">textStart</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.Material3.Corner.Full</item>
+        <item name="opticalCenterEnabled">true</item>
+    </style>
+
+    <style name="Widget.Gardendless.Button.ConnectedSegment" parent="Widget.Material3.Button.TonalButton">
+        <item name="android:minHeight">48dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:paddingStart">10dp</item>
+        <item name="android:paddingEnd">10dp</item>
+        <item name="android:checkable">true</item>
+        <item name="android:textAppearance">@style/TextAppearance.Material3.LabelLarge.Emphasized</item>
+        <item name="backgroundTint">@color/expressive_segment_bg</item>
+        <item name="android:textColor">@color/expressive_segment_fg</item>
+        <item name="iconTint">@color/expressive_segment_fg</item>
+        <item name="opticalCenterEnabled">true</item>
+    </style>
+
+    <style name="Widget.Gardendless.IconButton.ExpressiveTonal" parent="Widget.Material3.Button.IconButton.Filled.Tonal">
+        <item name="android:minWidth">48dp</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:insetLeft">0dp</item>
+        <item name="android:insetRight">0dp</item>
+        <item name="iconSize">22dp</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.Material3.Corner.Full</item>
+    </style>
+
 </resources>
