@@ -1,9 +1,14 @@
 {
   "versions": [
     {
-      "name": "0.16.24 lite",
+      "name": "0.16.24 Lite",
       "gpNext": "GP-Next 1.6.1",
-      "url": "https://github.com/gardenyab/gardendless-android/releases/download/launcheru/pvzge-0.16.24-1.6.1.zip"
+      "url": "https://github.com/gardenyab/gardendless-archives/releases/download/v0.16.24.lite.1.6.1/pvzge-0.16.24-1.6.1.zip"
+    },
+    {
+      "name": "0.16.24 Potato",
+      "gpNext": "GP-Next 1.6.1",
+      "url": "https://github.com/gardenyab/gardendless-archives/releases/download/v0.16.24.potato.1.6.1/pvzge-potato.zip"
     }
   ]
 }
